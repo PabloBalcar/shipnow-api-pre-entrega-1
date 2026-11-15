@@ -5,35 +5,35 @@ const userSchema = new mongoose.Schema(
   {
     firstName: {
       type: String,
-      required: true
+      required: true,
     },
     lastName: {
       type: String,
-      required: true
+      required: true,
     },
     email: {
       type: String,
       required: true,
-      unique: true
+      unique: true,
     },
     password: {
       type: String,
-      required: true
+      required: true,
     },
     role: {
       type: String,
       enum: Object.values(USER_ROLES),
-      default: USER_ROLES.CUSTOMER
+      default: USER_ROLES.USER,
     },
     documents: {
       type: Array,
-      default: []
-    }
+      default: [],
+    },
   },
   {
     timestamps: true,
-    versionKey: false
-  }
+    versionKey: false,
+  },
 );
 
 const UserModel = mongoose.model("User", userSchema);

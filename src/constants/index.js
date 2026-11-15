@@ -2,9 +2,8 @@
 // Object.freeze evita que alguien las modifique por accidente en tiempo de ejecución.
 
 export const USER_ROLES = Object.freeze({
-  ADMIN: "admin",
-  CUSTOMER: "customer",
-  STORE: "store"
+  ADMIN: "ADMIN",
+  USER: "USER",
 });
 
 export const ORDER_STATUS = Object.freeze({
@@ -13,22 +12,22 @@ export const ORDER_STATUS = Object.freeze({
   PICKED_UP: "picked_up",
   IN_TRANSIT: "in_transit",
   DELIVERED: "delivered",
-  CANCELLED: "cancelled"
+  CANCELLED: "cancelled",
 });
 
 export const DELIVERY_PRIORITY = Object.freeze({
   LOW: "low",
   NORMAL: "normal",
-  HIGH: "high"
+  HIGH: "high",
 });
 
 export const PRODUCT_STATUS = Object.freeze({
   AVAILABLE: "available",
-  OUT_OF_STOCK: "out_of_stock"
+  OUT_OF_STOCK: "out_of_stock",
 });
 
 export const NODE_ENVIRONMENTS = Object.freeze({
   DEVELOPMENT: "development",
   TEST: "test",
-  PRODUCTION: "production"
+  PRODUCTION: "production",
 });

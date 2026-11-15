@@ -4,197 +4,173 @@ API REST de logística y envíos construida con Node.js, Express y MongoDB (Mong
 
 ## Cómo correr el proyecto localmente
 
-1. Clonar el repositorio e instalar dependencias:
+### 1. Instalar dependencias
+
+Clonar el repositorio e instalar las dependencias:
 
 ```bash
 npm install
 ```
 
-2. Crear el archivo `.env` a partir de `.env.example` y completar los valores:
+### 2. Configurar las variables de entorno
+
+Crear el archivo `.env` a partir de `.env.example`:
 
 ```bash
 cp .env.example .env
 ```
 
-```bash
+Configurar las siguientes variables:
+
+```env
 PORT=8080
 MONGODB_URI=mongodb://127.0.0.1:27017/shipnow
 NODE_ENV=development
 ```
 
-Las tres variables son **obligatorias**. `NODE_ENV` acepta `development`, `test` o `production`. Si falta alguna, la app no arranca y muestra un error descriptivo, por ejemplo:
+Las tres variables son **obligatorias**.
+
+`NODE_ENV` acepta los siguientes valores:
+
+- `development`
+- `test`
+- `production`
+
+Si falta alguna variable obligatoria o su valor es inválido, la aplicación no inicia y muestra un error descriptivo.
+
+Por ejemplo:
 
 ```txt
 Error: Faltan variables de entorno obligatorias: MONGODB_URI. Revisá tu archivo .env (podés guiarte con .env.example).
 ```
 
-3. Levantar el servidor:
+### 3. Levantar el servidor
+
+En modo desarrollo:
 
 ```bash
-npm run dev   # con nodemon
-npm start     # sin nodemon
+npm run dev
 ```
 
-4. Verificar que funciona: `GET http://localhost:8080/health`
+En modo normal:
+
+```bash
+npm start
+```
+
+### 4. Verificar el funcionamiento
+
+Realizar una petición:
+
+```http
+GET http://localhost:8080/health
+```
+
+Respuesta esperada:
+
+```json
+{
+  "status": "success",
+  "message": "API funcionando"
+}
+```
+
+---
 
 ## Arquitectura
+
+El proyecto utiliza una arquitectura por capas para separar responsabilidades y facilitar el mantenimiento.
 
 ```txt
 src/
 ├── config/
-│   ├── env.config.js        # único lugar que lee process.env; valida variables al arrancar
+│   ├── env.config.js        # único lugar que lee process.env y valida variables
 │   └── db.js                # conexión a MongoDB
 ├── constants/
-│   └── index.js             # roles, estados de pedido, prioridades (Object.freeze)
-├── controllers/             # req/res: llaman al service y devuelven el status code
+│   └── index.js             # roles, estados y prioridades (Object.freeze)
+├── controllers/             # reciben req/res, llaman al service y responden
 ├── middlewares/
-│   └── error.middleware.js  # traduce errores a { status: "error", message }
-├── models/                  # solo esquemas de Mongoose
-├── repositories/            # (users, stores, orders, products) único lugar que conoce Mongoose/MongoDB
-├── routes/                  # solo conectan path + método con el controller
+│   └── error.middleware.js  # manejo centralizado de errores
+├── models/                  # esquemas de Mongoose
+├── repositories/            # acceso a datos mediante Mongoose
+├── routes/                  # conectan endpoints con controllers
 ├── services/                # lógica de negocio
 ├── utils/
-│   └── app-error.js         # error con código HTTP (404, 400, 409...)
+│   └── app-error.js         # errores personalizados con código HTTP
 ├── app.js
 └── server.js
 ```
 
-Flujo de una petición:
+### Flujo de una petición
 
 ```txt
 Request → Router → Controller → Service → Repository → Model / MongoDB
 ```
 
-Entidades refactorizadas: **Users**, **Products**, **Stores** y **Orders**. `Products` se agregó siguiendo la consigna (la base no la traía): cada producto pertenece a un comercio y tiene `stock` y `status`.
+Las entidades refactorizadas son **Users, Products, Stores y Orders**.
 
-## Por qué separé la lógica entre Service y Repository
+### Responsabilidades de cada capa
 
-**Repository: cómo se accede a los datos.** Es el único archivo que importa los modelos de Mongoose. Además de buscar y guardar, encapsula decisiones de acceso:
+**Controller**
 
-* Nunca devuelve el campo `password` (proyección `-password`). Antes, `GET /api/users` y los `populate` de pedidos exponían la contraseña.
-* Al listar pedidos, trae solo los campos útiles del cliente y del comercio, y ordena del más nuevo al más viejo.
-* En productos, acepta filtros (`status`, `store`) y trae el nombre y la dirección del comercio.
-* Usa `exists()` cuando solo hace falta saber si algo existe, sin traer el documento completo.
+Es la puerta de entrada HTTP. Recibe los datos de la petición, llama al Service correspondiente y devuelve la respuesta con su código de estado.
 
-**Service: qué reglas de negocio aplican.** No sabe nada de Express ni de Mongoose. Acá viven:
+**Service**
 
-* El estado de un producto (`available` / `out_of_stock`) se deduce del stock. Por defecto el listado de productos solo muestra los que tienen stock (`?includeOutOfStock=true` muestra todos).
-* El cálculo del total del pedido (`calculateTotal`), el estado inicial (`created`) y la prioridad por defecto.
-* Validar que el cliente y el comercio existan antes de crear un pedido.
-* Validar que el estado nuevo de un pedido sea uno de los permitidos.
-* No permitir emails duplicados al crear o actualizar usuarios.
-* Decidir qué es un "no encontrado" (404) y lanzar el error correspondiente.
+Contiene la lógica de negocio. No depende de Express ni realiza consultas directas a MongoDB.
 
-La idea: si mañana cambia la base de datos, se toca solo el Repository; si cambia una regla del negocio (por ejemplo cómo se calcula el total), se toca solo el Service. Y el Service se puede testear sin levantar Express ni MongoDB.
+**Repository**
 
-## Cambios de comportamiento respecto a la base
+Se encarga del acceso a los datos mediante los modelos de Mongoose. Encapsula las consultas, filtros, proyecciones y operaciones sobre la base de datos.
 
-* Las respuestas ya no incluyen la contraseña del usuario.
-* Los errores pasan por un middleware único y mantienen el formato `{ "status": "error", "message": "..." }`. IDs inválidos y errores de validación responden `400`; email duplicado `409`; recurso inexistente `404`.
-* Estado inválido en `PUT /api/orders/:oid/status` responde `400` con la lista de estados permitidos.
+### ¿Por qué separar Service y Repository?
 
----
+El Repository se ocupa de **cómo se accede a los datos**, mientras que el Service define **qué reglas de negocio se deben aplicar**.
 
-## Funcionamiento base de la API
+En esta implementación, el Repository:
 
-ShipNow API trabaja con tres entidades principales: usuarios, comercios y pedidos. Un usuario representa a un cliente, un comercio es el lugar desde donde sale el pedido, y un pedido es una solicitud de envío asociada a un usuario y a un comercio.
+- Evita devolver el campo `password` en las consultas de usuarios.
+- Al listar pedidos, obtiene únicamente los campos necesarios del cliente y del comercio.
+- Ordena los pedidos del más nuevo al más antiguo.
+- Permite consultar productos mediante filtros como `status` y `store`.
+- Utiliza `exists()` cuando solamente es necesario comprobar si un documento existe.
 
-### Flujo principal
+El Service contiene reglas como:
 
-El flujo básico de la API es:
+- Calcular automáticamente el total de un pedido (`calculateTotal`).
+- Definir el estado inicial y la prioridad por defecto.
+- Calcular el estado de un producto según su stock.
+- Validar que el cliente y el comercio existan antes de crear un pedido.
+- Validar los estados permitidos de un pedido.
+- Evitar emails duplicados al crear o actualizar usuarios.
+- Determinar cuándo un recurso no existe y devolver el error correspondiente.
 
-1. Crear un usuario.
-2. Crear un comercio.
-3. Crear un pedido usando el ID del usuario y el ID del comercio.
-4. Consultar los pedidos.
-5. Actualizar el estado de un pedido.
-
-El pedido contiene una lista de items, una dirección de entrega, un total calculado y un estado.
-
-### Entidades principales
-
-### User
-
-Representa a un usuario dentro del sistema.
-
-Campos principales:
-
-```json
-{
-  "firstName": "Martina",
-  "lastName": "Gómez",
-  "email": "martina@test.com",
-  "password": "123456",
-  "role": "customer"
-}
-```
-
-Roles disponibles (definidos en `USER_ROLES`):
-
-```txt
-admin
-customer
-store
-```
-
-En esta versión base, el usuario se usa principalmente como cliente del pedido.
+Esta separación permite modificar la forma de almacenar los datos sin alterar las reglas del negocio, y cambiar las reglas sin modificar las consultas a la base de datos.
 
 ---
 
-### Store
+## Configuración y constantes
 
-Representa un comercio.
+Las variables de entorno se centralizan en `src/config/env.config.js`.
 
-Campos principales:
+La aplicación valida:
 
-```json
-{
-  "name": "Kiosco Centro",
-  "address": "Av. Siempre Viva 742",
-  "owner": "ID_DEL_USUARIO"
-}
-```
+- Que existan `PORT`, `MONGODB_URI` y `NODE_ENV`.
+- Que `PORT` sea un número entero positivo.
+- Que `NODE_ENV` tenga un valor permitido.
 
-El campo `owner` guarda el ID de un usuario asociado al comercio.
+Las constantes del dominio se encuentran en `src/constants/index.js` y utilizan `Object.freeze()` para evitar modificaciones accidentales.
 
----
+### Roles de usuario
 
-### Order
-
-Representa un pedido o envío.
-
-Campos principales:
-
-```json
-{
-  "customer": "ID_DEL_USUARIO",
-  "store": "ID_DEL_COMERCIO",
-  "deliveryAddress": "Av. Siempre Viva 742",
-  "items": [
-    {
-      "name": "Caja mediana",
-      "quantity": 2,
-      "price": 1500
-    }
-  ]
-}
-```
-
-Cuando se crea un pedido, la API calcula el total automáticamente recorriendo los items.
-
-Ejemplo:
+Los roles disponibles son:
 
 ```txt
-2 unidades x $1500 = $3000
+ADMIN
+USER
 ```
 
-El pedido se crea inicialmente con estado:
-
-```txt
-created
-```
-
-Estados posibles del pedido:
+### Estados de pedidos
 
 ```txt
 created
@@ -205,28 +181,65 @@ delivered
 cancelled
 ```
 
-### Endpoints disponibles
+### Prioridades de entrega
 
-### Health check
-
-Permite verificar que la API está funcionando.
-
-```http
-GET /health
+```txt
+low
+normal
+high
 ```
 
-Respuesta esperada:
+### Estados de productos
 
-```json
-{
-  "status": "success",
-  "message": "API funcionando correctamente"
-}
+```txt
+available
+out_of_stock
 ```
 
 ---
 
+## Funcionamiento de la API
+
+ShipNow API trabaja con tres entidades principales: usuarios, comercios y pedidos.
+
+Un usuario representa a un cliente, un comercio es el lugar desde donde sale el pedido y un pedido es una solicitud de envío asociada a un usuario y a un comercio.
+
+### Flujo principal
+
+1. Crear un usuario.
+2. Crear un comercio.
+3. Crear un pedido utilizando el ID del usuario y el ID del comercio.
+4. Consultar los pedidos.
+5. Actualizar el estado de un pedido.
+
+El pedido contiene una lista de productos, una dirección de entrega, un total calculado y un estado.
+
+---
+
 ## Users
+
+Representa a los usuarios del sistema.
+
+### Campos principales
+
+```json
+{
+  "firstName": "Martina",
+  "lastName": "Gómez",
+  "email": "martina@test.com",
+  "password": "123456",
+  "role": "USER"
+}
+```
+
+Roles disponibles:
+
+```txt
+ADMIN
+USER
+```
+
+El rol predeterminado es `USER`.
 
 ### Obtener usuarios
 
@@ -254,7 +267,7 @@ Body de ejemplo:
   "lastName": "Gómez",
   "email": "martina@test.com",
   "password": "123456",
-  "role": "customer"
+  "role": "USER"
 }
 ```
 
@@ -274,11 +287,15 @@ DELETE /api/users/:uid
 
 ## Products
 
-Cada producto pertenece a un comercio. Estados (`PRODUCT_STATUS`): `available` y `out_of_stock`, que se calculan solos según el `stock`.
+Cada producto pertenece a un comercio y tiene un stock y un estado.
+
+Los estados disponibles son `available` y `out_of_stock`, determinados automáticamente según el stock.
+
+### Endpoints
 
 ```http
-GET    /api/products                          # solo con stock
-GET    /api/products?includeOutOfStock=true   # todos
+GET    /api/products
+GET    /api/products?includeOutOfStock=true
 GET    /api/products?store=ID_DEL_COMERCIO
 GET    /api/products/:pid
 POST   /api/products
@@ -286,7 +303,15 @@ PUT    /api/products/:pid
 DELETE /api/products/:pid
 ```
 
-Body de ejemplo para crear:
+Por defecto, el listado muestra solamente productos con stock disponible. El parámetro `includeOutOfStock=true` permite incluir todos los productos.
+
+### Crear producto
+
+```http
+POST /api/products
+```
+
+Body de ejemplo:
 
 ```json
 {
@@ -301,6 +326,8 @@ Body de ejemplo para crear:
 ---
 
 ## Stores
+
+Representa los comercios registrados en el sistema.
 
 ### Obtener comercios
 
@@ -346,6 +373,8 @@ DELETE /api/stores/:sid
 
 ## Orders
 
+Representa los pedidos o envíos realizados por los usuarios.
+
 ### Obtener pedidos
 
 ```http
@@ -386,33 +415,16 @@ Body de ejemplo:
 }
 ```
 
-Respuesta esperada:
+El total se calcula automáticamente:
 
-```json
-{
-  "status": "success",
-  "payload": {
-    "_id": "ID_DEL_PEDIDO",
-    "customer": "ID_DEL_USUARIO",
-    "store": "ID_DEL_COMERCIO",
-    "items": [
-      {
-        "name": "Caja mediana",
-        "quantity": 2,
-        "price": 1500
-      },
-      {
-        "name": "Sobre chico",
-        "quantity": 1,
-        "price": 800
-      }
-    ],
-    "deliveryAddress": "Av. Siempre Viva 742",
-    "total": 3800,
-    "status": "created"
-  }
-}
+```txt
+2 unidades x $1500 = $3000
+1 unidad x $800 = $800
+
+Total = $3800
 ```
+
+El pedido se crea inicialmente con estado `created`.
 
 ### Actualizar estado del pedido
 
@@ -438,7 +450,7 @@ DELETE /api/orders/:oid
 
 ## Formato general de respuestas
 
-Las respuestas exitosas siguen una estructura simple:
+Las respuestas exitosas utilizan la siguiente estructura:
 
 ```json
 {
@@ -447,7 +459,7 @@ Las respuestas exitosas siguen una estructura simple:
 }
 ```
 
-Las respuestas de error mantienen esta estructura y se generan desde un middleware centralizado:
+Las respuestas de error utilizan:
 
 ```json
 {
@@ -456,24 +468,35 @@ Las respuestas de error mantienen esta estructura y se generan desde un middlewa
 }
 ```
 
+El manejo de errores se centraliza mediante un middleware.
+
+Algunos códigos HTTP utilizados:
+
+- `400`: datos inválidos, IDs incorrectos o validaciones fallidas.
+- `404`: recurso inexistente.
+- `409`: conflicto por email duplicado.
+- `500`: error interno del servidor.
+
+---
+
 ## Estado actual del proyecto
 
-Esta versión incluye la **Pre-entrega del Módulo 1**:
+Esta versión incluye los requerimientos correspondientes a la **Pre-entrega del Módulo 1**:
 
-```txt
-configuración de entorno validada (src/config/env.config.js)
-constantes del dominio: roles, estados de pedido y de producto (src/constants/index.js)
-arquitectura por capas: controllers / services / repositories
-rutas mínimas
-middleware de errores básico
-```
+- Configuración de entorno validada.
+- Variables de entorno centralizadas.
+- Constantes de roles, estados y prioridades.
+- Arquitectura Controller-Service-Repository.
+- Refactorización de Users y Products.
+- Refactorización adicional de Stores y Orders.
+- Rutas simplificadas.
+- Manejo centralizado de errores.
+- Documentación de instalación y funcionamiento.
 
-Pendiente para los próximos módulos:
+### Pendiente para próximos módulos
 
-```txt
-logger profesional
-Swagger
-tests automatizados
-Multer
-Docker
-```
+- Logger profesional.
+- Documentación Swagger.
+- Tests automatizados.
+- Multer.
+- Docker.
