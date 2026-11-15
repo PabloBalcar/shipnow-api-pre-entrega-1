@@ -3,6 +3,8 @@ import cors from "cors";
 import usersRouter from "./routes/users.router.js";
 import storesRouter from "./routes/stores.router.js";
 import ordersRouter from "./routes/orders.router.js";
+import productsRouter from "./routes/products.router.js";
+import { errorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
 
@@ -26,6 +28,7 @@ app.get("/health", (req, res) => {
 app.use("/api/users", usersRouter);
 app.use("/api/stores", storesRouter);
 app.use("/api/orders", ordersRouter);
+app.use("/api/products", productsRouter);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -33,5 +36,7 @@ app.use((req, res) => {
     message: "Ruta no encontrada"
   });
 });
+
+app.use(errorHandler);
 
 export default app;

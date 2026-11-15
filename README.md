@@ -1,18 +1,103 @@
+# ShipNow API
+
+API REST de logística y envíos construida con Node.js, Express y MongoDB (Mongoose), organizada en **arquitectura por capas** (Router → Controller → Service → Repository).
+
+## Cómo correr el proyecto localmente
+
+1. Clonar el repositorio e instalar dependencias:
+
+```bash
+npm install
+```
+
+2. Crear el archivo `.env` a partir de `.env.example` y completar los valores:
+
+```bash
+cp .env.example .env
+```
+
+```bash
+PORT=8080
+MONGODB_URI=mongodb://127.0.0.1:27017/shipnow
+NODE_ENV=development
+```
+
+Las tres variables son **obligatorias**. `NODE_ENV` acepta `development`, `test` o `production`. Si falta alguna, la app no arranca y muestra un error descriptivo, por ejemplo:
+
+```txt
+Error: Faltan variables de entorno obligatorias: MONGODB_URI. Revisá tu archivo .env (podés guiarte con .env.example).
+```
+
+3. Levantar el servidor:
+
+```bash
+npm run dev   # con nodemon
+npm start     # sin nodemon
+```
+
+4. Verificar que funciona: `GET http://localhost:8080/health`
+
+## Arquitectura
+
+```txt
+src/
+├── config/
+│   ├── env.config.js        # único lugar que lee process.env; valida variables al arrancar
+│   └── db.js                # conexión a MongoDB
+├── constants/
+│   └── index.js             # roles, estados de pedido, prioridades (Object.freeze)
+├── controllers/             # req/res: llaman al service y devuelven el status code
+├── middlewares/
+│   └── error.middleware.js  # traduce errores a { status: "error", message }
+├── models/                  # solo esquemas de Mongoose
+├── repositories/            # (users, stores, orders, products) único lugar que conoce Mongoose/MongoDB
+├── routes/                  # solo conectan path + método con el controller
+├── services/                # lógica de negocio
+├── utils/
+│   └── app-error.js         # error con código HTTP (404, 400, 409...)
+├── app.js
+└── server.js
+```
+
+Flujo de una petición:
+
+```txt
+Request → Router → Controller → Service → Repository → Model / MongoDB
+```
+
+Entidades refactorizadas: **Users**, **Products**, **Stores** y **Orders**. `Products` se agregó siguiendo la consigna (la base no la traía): cada producto pertenece a un comercio y tiene `stock` y `status`.
+
+## Por qué separé la lógica entre Service y Repository
+
+**Repository: cómo se accede a los datos.** Es el único archivo que importa los modelos de Mongoose. Además de buscar y guardar, encapsula decisiones de acceso:
+
+* Nunca devuelve el campo `password` (proyección `-password`). Antes, `GET /api/users` y los `populate` de pedidos exponían la contraseña.
+* Al listar pedidos, trae solo los campos útiles del cliente y del comercio, y ordena del más nuevo al más viejo.
+* En productos, acepta filtros (`status`, `store`) y trae el nombre y la dirección del comercio.
+* Usa `exists()` cuando solo hace falta saber si algo existe, sin traer el documento completo.
+
+**Service: qué reglas de negocio aplican.** No sabe nada de Express ni de Mongoose. Acá viven:
+
+* El estado de un producto (`available` / `out_of_stock`) se deduce del stock. Por defecto el listado de productos solo muestra los que tienen stock (`?includeOutOfStock=true` muestra todos).
+* El cálculo del total del pedido (`calculateTotal`), el estado inicial (`created`) y la prioridad por defecto.
+* Validar que el cliente y el comercio existan antes de crear un pedido.
+* Validar que el estado nuevo de un pedido sea uno de los permitidos.
+* No permitir emails duplicados al crear o actualizar usuarios.
+* Decidir qué es un "no encontrado" (404) y lanzar el error correspondiente.
+
+La idea: si mañana cambia la base de datos, se toca solo el Repository; si cambia una regla del negocio (por ejemplo cómo se calcula el total), se toca solo el Service. Y el Service se puede testear sin levantar Express ni MongoDB.
+
+## Cambios de comportamiento respecto a la base
+
+* Las respuestas ya no incluyen la contraseña del usuario.
+* Los errores pasan por un middleware único y mantienen el formato `{ "status": "error", "message": "..." }`. IDs inválidos y errores de validación responden `400`; email duplicado `409`; recurso inexistente `404`.
+* Estado inválido en `PUT /api/orders/:oid/status` responde `400` con la lista de estados permitidos.
+
+---
+
 ## Funcionamiento base de la API
 
-ShipNow API es una aplicación backend construida con Node.js, Express y MongoDB.
-
-En su estado base, la API permite trabajar con tres entidades principales:
-
-* Usuarios
-* Comercios
-* Pedidos
-
-La idea del proyecto es simular una API simple de logística/envíos.
-
-Un usuario puede representar a un cliente.
-Un comercio representa el lugar desde donde sale el pedido.
-Un pedido representa una solicitud de envío asociada a un usuario y a un comercio.
+ShipNow API trabaja con tres entidades principales: usuarios, comercios y pedidos. Un usuario representa a un cliente, un comercio es el lugar desde donde sale el pedido, y un pedido es una solicitud de envío asociada a un usuario y a un comercio.
 
 ### Flujo principal
 
@@ -44,7 +129,7 @@ Campos principales:
 }
 ```
 
-Roles disponibles:
+Roles disponibles (definidos en `USER_ROLES`):
 
 ```txt
 admin
@@ -183,6 +268,34 @@ PUT /api/users/:uid
 
 ```http
 DELETE /api/users/:uid
+```
+
+---
+
+## Products
+
+Cada producto pertenece a un comercio. Estados (`PRODUCT_STATUS`): `available` y `out_of_stock`, que se calculan solos según el `stock`.
+
+```http
+GET    /api/products                          # solo con stock
+GET    /api/products?includeOutOfStock=true   # todos
+GET    /api/products?store=ID_DEL_COMERCIO
+GET    /api/products/:pid
+POST   /api/products
+PUT    /api/products/:pid
+DELETE /api/products/:pid
+```
+
+Body de ejemplo para crear:
+
+```json
+{
+  "name": "Caja mediana",
+  "description": "Caja de cartón 30x30",
+  "price": 1500,
+  "stock": 20,
+  "store": "ID_DEL_COMERCIO"
+}
 ```
 
 ---
@@ -334,7 +447,7 @@ Las respuestas exitosas siguen una estructura simple:
 }
 ```
 
-Las respuestas de error, en esta versión base, todavía se manejan de forma simple desde las rutas:
+Las respuestas de error mantienen esta estructura y se generan desde un middleware centralizado:
 
 ```json
 {
@@ -343,34 +456,24 @@ Las respuestas de error, en esta versión base, todavía se manejan de forma sim
 }
 ```
 
-Más adelante, el proyecto será refactorizado para incorporar una capa centralizada de manejo de errores.
-
 ## Estado actual del proyecto
 
-Esta versión base de ShipNow funciona, pero todavía no representa una API completamente profesional.
-
-Actualmente el proyecto tiene:
+Esta versión incluye la **Pre-entrega del Módulo 1**:
 
 ```txt
-app.js
-server.js
-models
-routes
-config/db.js
+configuración de entorno validada (src/config/env.config.js)
+constantes del dominio: roles, estados de pedido y de producto (src/constants/index.js)
+arquitectura por capas: controllers / services / repositories
+rutas mínimas
+middleware de errores básico
 ```
 
-Todavía no incorpora:
+Pendiente para los próximos módulos:
 
 ```txt
-controllers
-services
-repositories
-middleware global de errores
 logger profesional
 Swagger
 tests automatizados
 Multer
 Docker
 ```
-
-Durante el curso, la API será mejorada progresivamente para separar responsabilidades, mejorar la mantenibilidad y acercarse a una estructura más profesional.
