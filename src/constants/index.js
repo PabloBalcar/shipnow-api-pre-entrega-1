@@ -4,6 +4,7 @@
 export const USER_ROLES = Object.freeze({
   ADMIN: "ADMIN",
   USER: "USER",
+  COURIER: "COURIER",
 });
 
 export const ORDER_STATUS = Object.freeze({
@@ -19,6 +20,13 @@ export const DELIVERY_PRIORITY = Object.freeze({
   LOW: "low",
   NORMAL: "normal",
   HIGH: "high",
+});
+export const DELIVERY_STATUS = Object.freeze({
+  PENDING: "pending",
+  ASSIGNED: "assigned",
+  IN_TRANSIT: "in_transit",
+  DELIVERED: "delivered",
+  CANCELLED: "cancelled",
 });
 
 export const PRODUCT_STATUS = Object.freeze({

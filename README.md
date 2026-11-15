@@ -38,12 +38,6 @@ Las tres variables son **obligatorias**.
 
 Si falta alguna variable obligatoria o su valor es inválido, la aplicación no inicia y muestra un error descriptivo.
 
-Por ejemplo:
-
-```txt
-Error: Faltan variables de entorno obligatorias: MONGODB_URI. Revisá tu archivo .env (podés guiarte con .env.example).
-```
-
 ### 3. Levantar el servidor
 
 En modo desarrollo:
@@ -84,19 +78,30 @@ El proyecto utiliza una arquitectura por capas para separar responsabilidades y 
 ```txt
 src/
 ├── config/
-│   ├── env.config.js        # único lugar que lee process.env y valida variables
-│   └── db.js                # conexión a MongoDB
+│   ├── env.config.js
+│   └── db.js
 ├── constants/
-│   └── index.js             # roles, estados y prioridades (Object.freeze)
-├── controllers/             # reciben req/res, llaman al service y responden
+│   └── index.js
+├── controllers/
+│   ├── mocks.controller.js
+│   └── ...
 ├── middlewares/
-│   └── error.middleware.js  # manejo centralizado de errores
-├── models/                  # esquemas de Mongoose
-├── repositories/            # acceso a datos mediante Mongoose
-├── routes/                  # conectan endpoints con controllers
-├── services/                # lógica de negocio
+│   └── error.middleware.js
+├── models/
+│   ├── delivery.model.js
+│   └── ...
+├── repositories/
+│   ├── mocks.repository.js
+│   └── ...
+├── routes/
+│   ├── mocks.router.js
+│   └── ...
+├── services/
+│   ├── mocks.service.js
+│   └── ...
 ├── utils/
-│   └── app-error.js         # errores personalizados con código HTTP
+│   ├── app-error.js
+│   └── mock-generator.js
 ├── app.js
 └── server.js
 ```
@@ -107,7 +112,7 @@ src/
 Request → Router → Controller → Service → Repository → Model / MongoDB
 ```
 
-Las entidades refactorizadas son **Users, Products, Stores y Orders**.
+Las entidades principales son **Users, Products, Stores, Orders y Deliveries**.
 
 ### Responsabilidades de cada capa
 
@@ -121,29 +126,11 @@ Contiene la lógica de negocio. No depende de Express ni realiza consultas direc
 
 **Repository**
 
-Se encarga del acceso a los datos mediante los modelos de Mongoose. Encapsula las consultas, filtros, proyecciones y operaciones sobre la base de datos.
+Se encarga del acceso a los datos mediante los modelos de Mongoose. Encapsula las consultas y operaciones sobre la base de datos.
 
 ### ¿Por qué separar Service y Repository?
 
 El Repository se ocupa de **cómo se accede a los datos**, mientras que el Service define **qué reglas de negocio se deben aplicar**.
-
-En esta implementación, el Repository:
-
-- Evita devolver el campo `password` en las consultas de usuarios.
-- Al listar pedidos, obtiene únicamente los campos necesarios del cliente y del comercio.
-- Ordena los pedidos del más nuevo al más antiguo.
-- Permite consultar productos mediante filtros como `status` y `store`.
-- Utiliza `exists()` cuando solamente es necesario comprobar si un documento existe.
-
-El Service contiene reglas como:
-
-- Calcular automáticamente el total de un pedido (`calculateTotal`).
-- Definir el estado inicial y la prioridad por defecto.
-- Calcular el estado de un producto según su stock.
-- Validar que el cliente y el comercio existan antes de crear un pedido.
-- Validar los estados permitidos de un pedido.
-- Evitar emails duplicados al crear o actualizar usuarios.
-- Determinar cuándo un recurso no existe y devolver el error correspondiente.
 
 Esta separación permite modificar la forma de almacenar los datos sin alterar las reglas del negocio, y cambiar las reglas sin modificar las consultas a la base de datos.
 
@@ -163,12 +150,15 @@ Las constantes del dominio se encuentran en `src/constants/index.js` y utilizan 
 
 ### Roles de usuario
 
-Los roles disponibles son:
-
 ```txt
 ADMIN
 USER
+COURIER
 ```
+
+- `ADMIN`: administrador del sistema.
+- `USER`: usuario o cliente.
+- `COURIER`: repartidor.
 
 ### Estados de pedidos
 
@@ -189,6 +179,16 @@ normal
 high
 ```
 
+### Estados de entregas
+
+```txt
+pending
+assigned
+in_transit
+delivered
+cancelled
+```
+
 ### Estados de productos
 
 ```txt
@@ -200,19 +200,20 @@ out_of_stock
 
 ## Funcionamiento de la API
 
-ShipNow API trabaja con tres entidades principales: usuarios, comercios y pedidos.
+ShipNow API trabaja con usuarios, comercios, productos, pedidos y entregas.
 
-Un usuario representa a un cliente, un comercio es el lugar desde donde sale el pedido y un pedido es una solicitud de envío asociada a un usuario y a un comercio.
+Un usuario representa a un cliente, un comercio es el lugar desde donde sale el pedido, y un pedido es una solicitud de envío asociada a un usuario y a un comercio.
+
+Las entregas se relacionan con los pedidos y pueden tener asignado un repartidor con rol `COURIER`.
 
 ### Flujo principal
 
 1. Crear un usuario.
 2. Crear un comercio.
-3. Crear un pedido utilizando el ID del usuario y el ID del comercio.
+3. Crear un pedido utilizando el ID del usuario y del comercio.
 4. Consultar los pedidos.
-5. Actualizar el estado de un pedido.
-
-El pedido contiene una lista de productos, una dirección de entrega, un total calculado y un estado.
+5. Crear y gestionar entregas asociadas a pedidos.
+6. Actualizar los estados correspondientes.
 
 ---
 
@@ -232,54 +233,17 @@ Representa a los usuarios del sistema.
 }
 ```
 
-Roles disponibles:
-
-```txt
-ADMIN
-USER
-```
+Roles disponibles: `ADMIN`, `USER` y `COURIER`.
 
 El rol predeterminado es `USER`.
 
-### Obtener usuarios
+### Endpoints
 
 ```http
-GET /api/users
-```
-
-### Obtener usuario por ID
-
-```http
-GET /api/users/:uid
-```
-
-### Crear usuario
-
-```http
-POST /api/users
-```
-
-Body de ejemplo:
-
-```json
-{
-  "firstName": "Martina",
-  "lastName": "Gómez",
-  "email": "martina@test.com",
-  "password": "123456",
-  "role": "USER"
-}
-```
-
-### Actualizar usuario
-
-```http
-PUT /api/users/:uid
-```
-
-### Eliminar usuario
-
-```http
+GET    /api/users
+GET    /api/users/:uid
+POST   /api/users
+PUT    /api/users/:uid
 DELETE /api/users/:uid
 ```
 
@@ -329,16 +293,14 @@ Body de ejemplo:
 
 Representa los comercios registrados en el sistema.
 
-### Obtener comercios
+### Endpoints
 
 ```http
-GET /api/stores
-```
-
-### Obtener comercio por ID
-
-```http
-GET /api/stores/:sid
+GET    /api/stores
+GET    /api/stores/:sid
+POST   /api/stores
+PUT    /api/stores/:sid
+DELETE /api/stores/:sid
 ```
 
 ### Crear comercio
@@ -357,34 +319,20 @@ Body de ejemplo:
 }
 ```
 
-### Actualizar comercio
-
-```http
-PUT /api/stores/:sid
-```
-
-### Eliminar comercio
-
-```http
-DELETE /api/stores/:sid
-```
-
 ---
 
 ## Orders
 
 Representa los pedidos o envíos realizados por los usuarios.
 
-### Obtener pedidos
+### Endpoints
 
 ```http
-GET /api/orders
-```
-
-### Obtener pedido por ID
-
-```http
-GET /api/orders/:oid
+GET    /api/orders
+GET    /api/orders/:oid
+POST   /api/orders
+PUT    /api/orders/:oid/status
+DELETE /api/orders/:oid
 ```
 
 ### Crear pedido
@@ -440,11 +388,140 @@ Body de ejemplo:
 }
 ```
 
-### Eliminar pedido
+---
+
+## Deliveries
+
+Representa las entregas asociadas a los pedidos.
+
+Cada entrega tiene una referencia a un pedido y puede tener asignado un repartidor (`courier`) con rol `COURIER`.
+
+### Campos principales
+
+- `order`: referencia al pedido asociado.
+- `courier`: referencia al repartidor asignado. Puede ser `null`.
+- `status`: estado de la entrega.
+- `deliveredAt`: fecha de entrega, cuando corresponde.
+
+### Estados disponibles
+
+```txt
+pending
+assigned
+in_transit
+delivered
+cancelled
+```
+
+---
+
+## Mocking y carga de datos de prueba
+
+El proyecto incorpora un sistema de mocking utilizando **@faker-js/faker** para generar datos ficticios de usuarios, repartidores, comercios, pedidos y entregas.
+
+La lógica de generación está separada en las siguientes capas:
+
+- `utils/mock-generator.js`: genera los datos ficticios.
+- `services/mocks.service.js`: coordina la generación, validación y relaciones entre entidades.
+- `repositories/mocks.repository.js`: realiza las inserciones en MongoDB.
+- `controllers/mocks.controller.js`: gestiona las solicitudes HTTP.
+- `routes/mocks.router.js`: define los endpoints bajo `/api/mocks`.
+
+### Generar datos ficticios sin guardarlos
+
+Los siguientes endpoints permiten obtener datos simulados sin insertarlos en MongoDB.
 
 ```http
-DELETE /api/orders/:oid
+GET /api/mocks/users?qty=2
+GET /api/mocks/couriers?qty=2
+GET /api/mocks/orders?qty=2
+GET /api/mocks/deliveries?qty=2
 ```
+
+El parámetro `qty` indica la cantidad de registros a generar.
+
+- Si no se especifica, se generan 5 registros.
+- Se permite una cantidad entre 1 y 100.
+- Si la cantidad es inválida, se devuelve un error HTTP 400.
+
+Ejemplo:
+
+```http
+GET http://localhost:8080/api/mocks/users?qty=2
+```
+
+Respuesta de ejemplo:
+
+```json
+{
+  "status": "success",
+  "payload": [
+    {
+      "_id": "ID_GENERADO",
+      "firstName": "Martina",
+      "lastName": "Gómez",
+      "email": "martina@example.com",
+      "role": "USER",
+      "documents": []
+    }
+  ]
+}
+```
+
+Las contraseñas no se incluyen en las respuestas de generación de usuarios y repartidores.
+
+Los pedidos y las entregas generados incluyen referencias a las entidades relacionadas.
+
+### Insertar datos de prueba en MongoDB
+
+Para insertar datos ficticios en la base de datos se utiliza:
+
+```http
+POST /api/mocks/seed?qty=2
+```
+
+Este endpoint genera e inserta:
+
+- Usuarios con rol `USER`.
+- Repartidores con rol `COURIER`.
+- Comercios asociados a usuarios.
+- Pedidos asociados a usuarios y comercios.
+- Entregas asociadas a pedidos y repartidores.
+
+Las referencias se generan antes de realizar las inserciones, permitiendo mantener la relación entre los documentos.
+
+Respuesta esperada:
+
+```json
+{
+  "status": "success",
+  "payload": {
+    "insertados": {
+      "usuarios": 2,
+      "repartidores": 2,
+      "comercios": 2,
+      "pedidos": 2,
+      "entregas": 2
+    }
+  }
+}
+```
+
+El endpoint devuelve HTTP `201` cuando la inserción se realiza correctamente.
+
+**Importante:** cada ejecución del seed genera nuevos registros. No elimina los datos existentes.
+
+### Probar los endpoints con Thunder Client
+
+Con el servidor ejecutándose en el puerto `8080`, se pueden probar las siguientes solicitudes:
+
+| Método | Endpoint                      | Función                               |
+| ------ | ----------------------------- | ------------------------------------- |
+| GET    | `/api/mocks/users?qty=2`      | Genera usuarios ficticios             |
+| GET    | `/api/mocks/couriers?qty=2`   | Genera repartidores ficticios         |
+| GET    | `/api/mocks/orders?qty=2`     | Genera pedidos ficticios              |
+| GET    | `/api/mocks/deliveries?qty=2` | Genera entregas ficticias             |
+| POST   | `/api/mocks/seed?qty=2`       | Inserta datos relacionados en MongoDB |
 
 ---
 
@@ -481,17 +558,32 @@ Algunos códigos HTTP utilizados:
 
 ## Estado actual del proyecto
 
-Esta versión incluye los requerimientos correspondientes a la **Pre-entrega del Módulo 1**:
+Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1 y 2**.
+
+### Módulo 1
 
 - Configuración de entorno validada.
 - Variables de entorno centralizadas.
 - Constantes de roles, estados y prioridades.
 - Arquitectura Controller-Service-Repository.
 - Refactorización de Users y Products.
-- Refactorización adicional de Stores y Orders.
+- Refactorización de Stores y Orders.
 - Rutas simplificadas.
 - Manejo centralizado de errores.
 - Documentación de instalación y funcionamiento.
+
+### Módulo 2
+
+- Incorporación de la librería `@faker-js/faker`.
+- Generación de usuarios y repartidores ficticios.
+- Generación de pedidos y entregas ficticias.
+- Incorporación del modelo Delivery.
+- Relaciones entre usuarios, comercios, pedidos, entregas y repartidores.
+- Endpoints GET para generar datos sin persistirlos.
+- Endpoint POST para insertar datos de prueba en MongoDB.
+- Separación de responsabilidades mediante arquitectura por capas.
+- Validación de cantidades generadas.
+- Documentación de los endpoints de mocking y seed.
 
 ### Pendiente para próximos módulos
 
