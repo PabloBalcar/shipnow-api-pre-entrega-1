@@ -2,16 +2,18 @@ import { productsRepository } from "../repositories/products.repository.js";
 import { storesRepository } from "../repositories/stores.repository.js";
 import { PRODUCT_STATUS } from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
+import { ERRORS } from "../constants/errors.js";
 
-const notFound = () => new AppError("Producto no encontrado", 404);
+const notFound = () => new AppError(ERRORS.PRODUCT_NOT_FOUND);
+const storeNotFound = () => new AppError(ERRORS.STORE_NOT_FOUND);
 
-// Regla de negocio: el estado depende del stock
+// Regla de negocio: el estado depende del stock.
 const getStatusByStock = (stock) =>
   stock > 0 ? PRODUCT_STATUS.AVAILABLE : PRODUCT_STATUS.OUT_OF_STOCK;
 
 const validateStock = (stock) => {
   if (stock !== undefined && (!Number.isInteger(stock) || stock < 0)) {
-    throw new AppError("El stock debe ser un número entero mayor o igual a 0", 400);
+    throw new AppError(ERRORS.INVALID_PRODUCT_STOCK);
   }
 };
 
@@ -37,13 +39,13 @@ export const productsService = {
     const { name, description, price, stock, store } = productData;
 
     if (!name || price === undefined || !store) {
-      throw new AppError("Faltan datos obligatorios (name, price, store)", 400);
+      throw new AppError(ERRORS.PRODUCT_REQUIRED_FIELDS);
     }
 
     validateStock(stock);
 
     if (!(await storesRepository.exists(store))) {
-      throw new AppError("Comercio no encontrado", 404);
+      throw storeNotFound();
     }
 
     const finalStock = stock ?? 0;
@@ -54,17 +56,17 @@ export const productsService = {
       price,
       store,
       stock: finalStock,
-      status: getStatusByStock(finalStock)
+      status: getStatusByStock(finalStock),
     });
   },
 
   update: async (id, productData) => {
-    const { status, ...dataToUpdate } = productData; // el estado no se setea a mano, se deduce del stock
+    const { status, ...dataToUpdate } = productData;
 
     validateStock(dataToUpdate.stock);
 
     if (dataToUpdate.store && !(await storesRepository.exists(dataToUpdate.store))) {
-      throw new AppError("Comercio no encontrado", 404);
+      throw storeNotFound();
     }
 
     if (dataToUpdate.stock !== undefined) {
@@ -80,5 +82,5 @@ export const productsService = {
     const product = await productsRepository.deleteById(id);
     if (!product) throw notFound();
     return product;
-  }
+  },
 };

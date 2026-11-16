@@ -81,7 +81,8 @@ src/
 │   ├── env.config.js
 │   └── db.js
 ├── constants/
-│   └── index.js
+│   ├── index.js
+│   └── errors.js
 ├── controllers/
 │   ├── mocks.controller.js
 │   └── ...
@@ -118,15 +119,19 @@ Las entidades principales son **Users, Products, Stores, Orders y Deliveries**.
 
 **Controller**
 
-Es la puerta de entrada HTTP. Recibe los datos de la petición, llama al Service correspondiente y devuelve la respuesta con su código de estado.
+Es la puerta de entrada HTTP. Recibe los datos de la petición, llama al Service correspondiente y devuelve la respuesta con su código de estado. Los errores se derivan al middleware global mediante `next(error)`.
 
 **Service**
 
-Contiene la lógica de negocio. No depende de Express ni realiza consultas directas a MongoDB.
+Contiene la lógica de negocio. No depende de Express ni realiza consultas directas a MongoDB. También valida las reglas de negocio y lanza errores personalizados cuando corresponde.
 
 **Repository**
 
 Se encarga del acceso a los datos mediante los modelos de Mongoose. Encapsula las consultas y operaciones sobre la base de datos.
+
+**Middleware**
+
+Centraliza el tratamiento de errores y transforma las excepciones recibidas en respuestas HTTP con un formato uniforme.
 
 ### ¿Por qué separar Service y Repository?
 
@@ -147,6 +152,8 @@ La aplicación valida:
 - Que `NODE_ENV` tenga un valor permitido.
 
 Las constantes del dominio se encuentran en `src/constants/index.js` y utilizan `Object.freeze()` para evitar modificaciones accidentales.
+
+El diccionario de errores se encuentra en `src/constants/errors.js` y centraliza los códigos, mensajes y estados HTTP asociados a los errores de la aplicación.
 
 ### Roles de usuario
 
@@ -509,7 +516,7 @@ Respuesta esperada:
 
 El endpoint devuelve HTTP `201` cuando la inserción se realiza correctamente.
 
-**Importante:** cada ejecución del seed genera nuevos registros. No elimina los datos existentes.
+**Importante:** cada ejecución del seed genera nuevos registros. No elimina los datos existentes. Las inserciones se realizan secuencialmente y no utilizan transacciones; si una operación intermedia falla, las inserciones anteriores podrían permanecer guardadas.
 
 ### Probar los endpoints con Thunder Client
 
@@ -525,40 +532,178 @@ Con el servidor ejecutándose en el puerto `8080`, se pueden probar las siguient
 
 ---
 
-## Formato general de respuestas
+## Manejo profesional de errores
 
-Las respuestas exitosas utilizan la siguiente estructura:
+El proyecto implementa un sistema centralizado de manejo de errores para mantener respuestas HTTP consistentes y evitar que cada controlador tenga que construir sus propias respuestas de error.
 
-```json
-{
-  "status": "success",
-  "payload": {}
-}
+### Componentes principales
+
+- `utils/app-error.js`: define la clase `AppError`, utilizada para crear errores personalizados de la aplicación.
+- `constants/errors.js`: contiene el diccionario centralizado de errores, con sus códigos internos, mensajes y estados HTTP.
+- `middlewares/error.middleware.js`: recibe los errores y genera la respuesta HTTP correspondiente.
+- `app.js`: deriva las rutas inexistentes al middleware global y registra el middleware de errores al final de la configuración de Express.
+
+### Flujo de manejo de errores
+
+```txt
+Request
+   ↓
+Router
+   ↓
+Controller
+   ↓
+Service
+   ↓
+AppError / Error de Mongoose
+   ↓
+next(error)
+   ↓
+Error Middleware
+   ↓
+Respuesta HTTP uniforme
 ```
 
-Las respuestas de error utilizan:
+Los errores de negocio se detectan principalmente en los Services. Los Controllers capturan las excepciones y las derivan mediante `next(error)`, sin construir respuestas de error por separado.
+
+### Formato de respuesta
+
+Todas las respuestas de error siguen esta estructura:
 
 ```json
 {
   "status": "error",
-  "message": "Usuario no encontrado"
+  "statusCode": 400,
+  "error": "INVALID_MOCK_AMOUNT",
+  "message": "La cantidad debe ser un número entero entre 1 y 100"
 }
 ```
 
-El manejo de errores se centraliza mediante un middleware.
+El campo `details` es opcional y se utiliza cuando es necesario proporcionar información adicional sobre el error.
 
-Algunos códigos HTTP utilizados:
+### Códigos HTTP utilizados
 
-- `400`: datos inválidos, IDs incorrectos o validaciones fallidas.
-- `404`: recurso inexistente.
-- `409`: conflicto por email duplicado.
-- `500`: error interno del servidor.
+| Código HTTP | Descripción                                                          |
+| ----------- | -------------------------------------------------------------------- |
+| `400`       | Datos inválidos, identificadores incorrectos o validaciones fallidas |
+| `404`       | Recurso o ruta inexistente                                           |
+| `409`       | Conflicto por un recurso duplicado                                   |
+| `500`       | Error interno del servidor o problema de base de datos               |
+
+### Errores personalizados
+
+Algunos de los errores definidos en el diccionario `ERRORS` son:
+
+| Código interno          | HTTP | Descripción                                  |
+| ----------------------- | ---: | -------------------------------------------- |
+| `USER_NOT_FOUND`        |  404 | Usuario no encontrado                        |
+| `STORE_NOT_FOUND`       |  404 | Comercio no encontrado                       |
+| `PRODUCT_NOT_FOUND`     |  404 | Producto no encontrado                       |
+| `ORDER_NOT_FOUND`       |  404 | Pedido no encontrado                         |
+| `INVALID_MOCK_AMOUNT`   |  400 | Cantidad de mocks inválida                   |
+| `INVALID_ORDER_STATUS`  |  400 | Estado de pedido inválido                    |
+| `INVALID_PRODUCT_STOCK` |  400 | Stock de producto inválido                   |
+| `INVALID_ID`            |  400 | Identificador con formato incorrecto         |
+| `VALIDATION_ERROR`      |  400 | Error de validación de Mongoose              |
+| `DUPLICATE_RESOURCE`    |  409 | Registro duplicado                           |
+| `DATABASE_ERROR`        |  500 | Error de interacción con MongoDB             |
+| `MOCK_GENERATION_ERROR` |  500 | Error durante la generación o carga de mocks |
+| `ROUTE_NOT_FOUND`       |  404 | Ruta inexistente                             |
+| `INTERNAL_SERVER_ERROR` |  500 | Error interno no identificado                |
+
+### Errores de Mongoose
+
+El middleware también contempla errores generados por Mongoose y MongoDB:
+
+- `ValidationError`: errores de validación de documentos.
+- `CastError`: identificadores o valores con formato incorrecto.
+- Código `11000`: conflictos por valores duplicados.
+- Errores de conexión o comunicación con MongoDB/Mongoose.
+
+En los errores de validación se pueden incluir detalles sobre los campos que no cumplen las reglas establecidas.
+
+En producción, los errores internos con estado HTTP 500 se reemplazan por un mensaje genérico para evitar exponer información técnica.
+
+### Probar el manejo de errores
+
+Se pueden reproducir distintos casos utilizando Thunder Client.
+
+**1. Cantidad igual a cero**
+
+```http
+GET http://localhost:8080/api/mocks/users?qty=0
+```
+
+Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
+
+**2. Cantidad negativa**
+
+```http
+GET http://localhost:8080/api/mocks/users?qty=-3
+```
+
+Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
+
+**3. Cantidad no numérica**
+
+```http
+GET http://localhost:8080/api/mocks/users?qty=abc
+```
+
+Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
+
+**4. Cantidad superior al máximo permitido**
+
+```http
+GET http://localhost:8080/api/mocks/users?qty=101
+```
+
+Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
+
+**5. Cantidad válida**
+
+```http
+GET http://localhost:8080/api/mocks/users?qty=3
+```
+
+Resultado esperado: HTTP `200`, con tres usuarios generados y sin contraseñas expuestas.
+
+**6. Seed de datos de prueba**
+
+```http
+POST http://localhost:8080/api/mocks/seed?qty=2
+```
+
+Resultado esperado: HTTP `201`, con dos registros insertados por cada colección.
+
+**7. Ruta inexistente**
+
+```http
+GET http://localhost:8080/api/ruta-inexistente
+```
+
+Resultado esperado: HTTP `404`, código `ROUTE_NOT_FOUND`.
+
+**8. Identificador inválido**
+
+```http
+GET http://localhost:8080/api/users/123
+```
+
+Resultado esperado: HTTP `400`, código `INVALID_ID`.
+
+**9. Usuario inexistente**
+
+```http
+GET http://localhost:8080/api/users/507f1f77bcf86cd799439011
+```
+
+Resultado esperado: HTTP `404`, código `USER_NOT_FOUND`.
 
 ---
 
 ## Estado actual del proyecto
 
-Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1 y 2**.
+Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1, 2 y 3**.
 
 ### Módulo 1
 
@@ -569,7 +714,6 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Refactorización de Users y Products.
 - Refactorización de Stores y Orders.
 - Rutas simplificadas.
-- Manejo centralizado de errores.
 - Documentación de instalación y funcionamiento.
 
 ### Módulo 2
@@ -584,6 +728,21 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Separación de responsabilidades mediante arquitectura por capas.
 - Validación de cantidades generadas.
 - Documentación de los endpoints de mocking y seed.
+
+### Módulo 3
+
+- Implementación de la clase personalizada `AppError`.
+- Creación de un diccionario centralizado de errores.
+- Incorporación de códigos internos y estados HTTP asociados.
+- Middleware global para el manejo de errores.
+- Normalización del formato de respuestas de error.
+- Manejo de errores de validación de Mongoose.
+- Manejo de identificadores inválidos y registros duplicados.
+- Manejo controlado de errores de MongoDB.
+- Integración del manejo centralizado de errores en el módulo de mocks.
+- Validación de cantidades recibidas en los endpoints de mocking.
+- Derivación de rutas inexistentes al middleware global.
+- Pruebas de casos exitosos y errores mediante Thunder Client.
 
 ### Pendiente para próximos módulos
 

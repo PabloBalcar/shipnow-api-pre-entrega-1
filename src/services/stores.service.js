@@ -1,7 +1,8 @@
 import { storesRepository } from "../repositories/stores.repository.js";
 import { AppError } from "../utils/app-error.js";
+import { ERRORS } from "../constants/errors.js";
 
-const notFound = () => new AppError("Comercio no encontrado", 404);
+const notFound = () => new AppError(ERRORS.STORE_NOT_FOUND);
 
 export const storesService = {
   getAll: () => storesRepository.findAll(),
@@ -24,5 +25,5 @@ export const storesService = {
     const store = await storesRepository.deleteById(id);
     if (!store) throw notFound();
     return store;
-  }
+  },
 };

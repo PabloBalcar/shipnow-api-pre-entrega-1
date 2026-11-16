@@ -3,11 +3,12 @@ import { usersRepository } from "../repositories/users.repository.js";
 import { storesRepository } from "../repositories/stores.repository.js";
 import { ORDER_STATUS, DELIVERY_PRIORITY } from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
+import { ERRORS } from "../constants/errors.js";
 
-const notFound = () => new AppError("Pedido no encontrado", 404);
+const notFound = () => new AppError(ERRORS.ORDER_NOT_FOUND);
 
 export const ordersService = {
-  // Regla de negocio pura (sin base de datos): fácil de testear
+  // Regla de negocio pura (sin base de datos): fácil de testear.
   calculateTotal: (items) =>
     items.reduce((accumulator, item) => accumulator + item.price * item.quantity, 0),
 
@@ -23,19 +24,19 @@ export const ordersService = {
     const { customer, store, items, deliveryAddress, priority } = orderData;
 
     if (!customer || !store || !items || !deliveryAddress) {
-      throw new AppError("Faltan datos obligatorios", 400);
+      throw new AppError(ERRORS.ORDER_REQUIRED_FIELDS);
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      throw new AppError("El pedido debe tener al menos un producto", 400);
+      throw new AppError(ERRORS.ORDER_ITEMS_REQUIRED);
     }
 
     if (!(await usersRepository.exists(customer))) {
-      throw new AppError("Usuario no encontrado", 404);
+      throw new AppError(ERRORS.USER_NOT_FOUND);
     }
 
     if (!(await storesRepository.exists(store))) {
-      throw new AppError("Comercio no encontrado", 404);
+      throw new AppError(ERRORS.STORE_NOT_FOUND);
     }
 
     return ordersRepository.create({
@@ -45,7 +46,7 @@ export const ordersService = {
       deliveryAddress,
       priority: priority ?? DELIVERY_PRIORITY.NORMAL,
       total: ordersService.calculateTotal(items),
-      status: ORDER_STATUS.CREATED
+      status: ORDER_STATUS.CREATED,
     });
   },
 
@@ -53,7 +54,10 @@ export const ordersService = {
     const validStatuses = Object.values(ORDER_STATUS);
 
     if (!validStatuses.includes(status)) {
-      throw new AppError(`Estado inválido. Valores permitidos: ${validStatuses.join(", ")}`, 400);
+      throw new AppError({
+        ...ERRORS.INVALID_ORDER_STATUS,
+        details: { validStatuses },
+      });
     }
 
     const order = await ordersRepository.updateStatus(id, status);
@@ -65,5 +69,5 @@ export const ordersService = {
     const order = await ordersRepository.deleteById(id);
     if (!order) throw notFound();
     return order;
-  }
+  },
 };

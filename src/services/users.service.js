@@ -1,7 +1,8 @@
 import { usersRepository } from "../repositories/users.repository.js";
 import { AppError } from "../utils/app-error.js";
+import { ERRORS } from "../constants/errors.js";
 
-const notFound = () => new AppError("Usuario no encontrado", 404);
+const notFound = () => new AppError(ERRORS.USER_NOT_FOUND);
 
 export const usersService = {
   getAll: () => usersRepository.findAll(),
@@ -15,7 +16,7 @@ export const usersService = {
   create: async (userData) => {
     if (userData.email) {
       const existingUser = await usersRepository.findByEmail(userData.email);
-      if (existingUser) throw new AppError("El email ya está registrado", 409);
+      if (existingUser) throw new AppError(ERRORS.USER_ALREADY_EXISTS);
     }
     return usersRepository.create(userData);
   },
@@ -24,9 +25,10 @@ export const usersService = {
     if (userData.email) {
       const existingUser = await usersRepository.findByEmail(userData.email);
       if (existingUser && String(existingUser._id) !== String(id)) {
-        throw new AppError("El email ya está registrado", 409);
+        throw new AppError(ERRORS.USER_ALREADY_EXISTS);
       }
     }
+
     const user = await usersRepository.updateById(id, userData);
     if (!user) throw notFound();
     return user;
@@ -36,5 +38,5 @@ export const usersService = {
     const user = await usersRepository.deleteById(id);
     if (!user) throw notFound();
     return user;
-  }
+  },
 };

@@ -1,8 +1,13 @@
-// Error con código HTTP asociado. Lo lanzan los services y lo traduce el middleware de errores.
+// Error personalizado de la aplicación.
+// Los services lo utilizan para informar errores de negocio al middleware global.
+
 export class AppError extends Error {
-  constructor(message, statusCode = 500) {
+  constructor({ code, message, statusCode = 500, details = null }) {
     super(message);
+
     this.name = "AppError";
+    this.code = code;
     this.statusCode = statusCode;
+    this.details = details;
   }
 }
