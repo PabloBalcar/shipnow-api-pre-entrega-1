@@ -56,9 +56,8 @@ npm start
 
 Realizar una petición:
 
-```http
-GET http://localhost:8080/health
-```
+````http
+GET http://localhost:8080/api/health```
 
 Respuesta esperada:
 
@@ -67,7 +66,7 @@ Respuesta esperada:
   "status": "success",
   "message": "API funcionando"
 }
-```
+````
 
 ---
 
@@ -867,6 +866,128 @@ Se verificó el acceso a Swagger UI y se probaron endpoints documentados mediant
 El endpoint `/api/logger/test` está disponible únicamente fuera del entorno de producción y se utiliza como herramienta de validación del sistema de logging.
 
 **Importante:** la documentación incluye los endpoints de generación de entregas ficticias (`/api/mocks/deliveries`), pero el proyecto no cuenta con una ruta CRUD independiente `/api/deliveries`.
+
+---
+
+## Testing automatizado
+
+El proyecto incorpora pruebas funcionales automatizadas utilizando **Mocha**, **Chai** y **Supertest**.
+
+Estas herramientas permiten ejecutar solicitudes HTTP contra la aplicación, comprobar los códigos de respuesta y validar la estructura y el contenido de las respuestas sin necesidad de iniciar manualmente el servidor.
+
+### Dependencias utilizadas
+
+- `mocha`: ejecutor de pruebas.
+- `chai`: biblioteca de aserciones.
+- `supertest`: permite realizar solicitudes HTTP contra la aplicación Express.
+
+### Configuración del entorno de testing
+
+Las pruebas utilizan una base de datos independiente llamada `shipnow-test`, separada de la base de desarrollo.
+
+Para ejecutar los tests se debe crear un archivo `.env.test` en la raíz del proyecto con las siguientes variables:
+
+```env
+PORT=8081
+NODE_ENV=test
+MONGODB_URI=mongodb://127.0.0.1:27017/shipnow-test
+```
+
+La URI debe apuntar exclusivamente a la base de datos de testing. Si se utiliza MongoDB Atlas, se debe configurar la conexión correspondiente y seleccionar la base `shipnow-test`.
+
+El archivo `.env.test` no se versiona y está excluido mediante `.gitignore`.
+
+Antes de establecer la conexión, `tests/setup.js` verifica que `NODE_ENV` sea `test` y que la URI corresponda a `shipnow-test`. Si alguna condición no se cumple, las pruebas no se ejecutan.
+
+### Estructura de los tests
+
+```text
+tests/
+├── setup.js
+├── app.test.js
+├── users/
+│   └── users.test.js
+├── orders/
+│   └── orders.test.js
+├── mocks/
+│   └── mocks.test.js
+├── logger/
+│   └── logger.test.js
+└── docs/
+    └── docs.test.js
+```
+
+### Ejecutar las pruebas
+
+Instalar las dependencias:
+
+```bash
+npm install
+```
+
+Ejecutar la suite completa:
+
+```bash
+npm test
+```
+
+El comando utiliza Mocha y carga previamente `tests/setup.js`, que configura el entorno, establece la conexión con MongoDB y la cierra al finalizar las pruebas.
+
+### Módulos y casos cubiertos
+
+**Aplicación**
+
+- Respuesta HTTP 404 para rutas inexistentes.
+- Validación de la estructura de error.
+
+**Usuarios**
+
+- Listado de usuarios.
+- Respuesta 404 cuando un usuario no existe.
+
+**Pedidos**
+
+- Listado de pedidos.
+- Creación exitosa y cálculo automático del total.
+- Validación de datos obligatorios.
+- Consulta de pedidos por ID.
+- Respuesta 404 para pedidos inexistentes.
+- Actualización de estados.
+- Rechazo de estados inválidos.
+
+**Mocks**
+
+- Generación de usuarios y repartidores.
+- Generación de pedidos y entregas.
+- Validación de cantidades solicitadas.
+- Inserción de datos relacionados mediante seed.
+- Validación de errores en la carga de datos.
+
+**Logger**
+
+- Verificación de los seis niveles de Winston: `debug`, `http`, `info`, `warning`, `error` y `fatal`.
+
+**Swagger**
+
+- Verificación de disponibilidad de la interfaz de documentación.
+
+### Datos de prueba y limpieza
+
+Los tests crean los registros necesarios para probar las operaciones que dependen de MongoDB.
+
+Los datos generados por las pruebas de pedidos se eliminan al finalizar su suite. Las pruebas de mocking identifican los documentos nuevos y eliminan únicamente esos registros, preservando los documentos que ya existían.
+
+La base `shipnow-test` debe mantenerse separada de la base utilizada durante el desarrollo.
+
+### Resultado de las pruebas
+
+La suite funcional fue ejecutada dos veces consecutivas, obteniendo en ambas ejecuciones:
+
+```text
+19 passing (4s)
+```
+
+Esto permite comprobar que las pruebas pueden repetirse correctamente sin depender de los datos generados en una ejecución anterior.
 
 ---
 
