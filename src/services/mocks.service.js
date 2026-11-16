@@ -11,15 +11,13 @@ import {
   DELIVERY_STATUS,
 } from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
+import { ERRORS } from "../constants/errors.js";
 
 const validateQuantity = (qty) => {
   const quantity = Number(qty);
 
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
-    throw new AppError(
-      "La cantidad debe ser un número entero entre 1 y 100",
-      400,
-    );
+    throw new AppError(ERRORS.INVALID_MOCK_AMOUNT);
   }
 
   return quantity;
@@ -92,21 +90,45 @@ export const mocksService = {
     const { users, couriers, stores, orders, deliveries } =
       generateRelatedMocks(qty);
 
-    const insertedUsers = await mocksRepository.insertUsers(users);
-    const insertedCouriers = await mocksRepository.insertUsers(couriers);
-    const insertedStores = await mocksRepository.insertStores(stores);
-    const insertedOrders = await mocksRepository.insertOrders(orders);
-    const insertedDeliveries =
-      await mocksRepository.insertDeliveries(deliveries);
+    try {
+      const insertedUsers = await mocksRepository.insertUsers(users);
+      const insertedCouriers = await mocksRepository.insertUsers(couriers);
+      const insertedStores = await mocksRepository.insertStores(stores);
+      const insertedOrders = await mocksRepository.insertOrders(orders);
+      const insertedDeliveries =
+        await mocksRepository.insertDeliveries(deliveries);
 
-    return {
-      insertados: {
-        usuarios: insertedUsers.length,
-        repartidores: insertedCouriers.length,
-        comercios: insertedStores.length,
-        pedidos: insertedOrders.length,
-        entregas: insertedDeliveries.length,
-      },
-    };
+      return {
+        insertados: {
+          usuarios: insertedUsers.length,
+          repartidores: insertedCouriers.length,
+          comercios: insertedStores.length,
+          pedidos: insertedOrders.length,
+          entregas: insertedDeliveries.length,
+        },
+      };
+    } catch (error) {
+      // Conservamos los errores que el middleware ya sabe interpretar.
+      if (
+        error instanceof AppError ||
+        error.name === "ValidationError" ||
+        error.name === "CastError" ||
+        error.code === 11000
+      ) {
+        throw error;
+      }
+
+      // Identificamos específicamente los problemas de MongoDB/Mongoose.
+      if (/^(Mongo|Mongoose)/.test(error.name ?? "")) {
+        const appError = new AppError(ERRORS.DATABASE_ERROR);
+        appError.cause = error;
+        throw appError;
+      }
+
+      // Cualquier otro fallo durante la carga se informa de forma controlada.
+      const appError = new AppError(ERRORS.MOCK_GENERATION_ERROR);
+      appError.cause = error;
+      throw appError;
+    }
   },
 };
