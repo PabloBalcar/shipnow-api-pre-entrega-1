@@ -804,9 +804,75 @@ En una operación como una transferencia de fondos:
 
 ---
 
+## Documentación de la API con Swagger
+
+El proyecto incorpora Swagger para documentar los endpoints de la API mediante la especificación OpenAPI 3.0. La documentación permite consultar los recursos disponibles, sus métodos HTTP, parámetros, cuerpos de solicitud y respuestas posibles.
+
+### Acceder a Swagger UI
+
+Con el servidor ejecutándose localmente, ingresar a:
+
+```http
+http://localhost:8080/api/docs
+```
+
+Desde Swagger UI se pueden explorar los endpoints documentados y ejecutar solicitudes contra el servidor local.
+
+### Configuración
+
+La documentación se configura de manera independiente en los siguientes archivos:
+
+- `src/docs/swagger.config.js`: contiene la configuración de Swagger, la información general de la API, la versión OpenAPI y el servidor local.
+- `src/docs/schemas.yaml`: define los esquemas reutilizables de datos y respuestas.
+- `src/docs/users.js`, `src/docs/products.js`, `src/docs/stores.js`, `src/docs/orders.js` y `src/docs/mocks.js`: contienen la documentación de los endpoints correspondientes.
+- `src/docs/logger.js`: documenta el endpoint de prueba del sistema de logging.
+
+La integración utiliza las dependencias `swagger-jsdoc` y `swagger-ui-express`. La interfaz se monta desde `src/app.js` en la ruta `/api/docs`.
+
+### Recursos documentados
+
+La documentación incluye los endpoints de:
+
+- Users.
+- Products.
+- Stores.
+- Orders.
+- Mocks de usuarios, repartidores, pedidos y entregas.
+- Carga de datos de prueba mediante seed.
+- Prueba del sistema de logging.
+
+Se documentan los métodos HTTP, parámetros de ruta y consulta, cuerpos de solicitud cuando corresponden, respuestas exitosas y errores posibles.
+
+### Esquemas reutilizables
+
+Se definen esquemas para representar las estructuras principales de la API:
+
+- `User` y `UserInput`.
+- `Order` y `OrderItem`.
+- `Delivery`.
+- `Store`.
+- `ErrorResponse`.
+- `SuccessResponse`.
+
+Esto permite reutilizar las definiciones en distintos endpoints y mantener una documentación consistente.
+
+### Pruebas de la documentación
+
+Se verificó el acceso a Swagger UI y se probaron endpoints documentados mediante las solicitudes correspondientes:
+
+- `GET /api/users`: respuesta HTTP 200.
+- `GET /api/mocks/users?qty=3`: respuesta HTTP 200 y generación de tres usuarios ficticios sin exponer contraseñas.
+- `GET /api/logger/test`: respuesta HTTP 200 y ejecución de los seis niveles de Winston.
+
+El endpoint `/api/logger/test` está disponible únicamente fuera del entorno de producción y se utiliza como herramienta de validación del sistema de logging.
+
+**Importante:** la documentación incluye los endpoints de generación de entregas ficticias (`/api/mocks/deliveries`), pero el proyecto no cuenta con una ruta CRUD independiente `/api/deliveries`.
+
+---
+
 ## Estado actual del proyecto
 
-Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1, 2, 3 y 4**.
+Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1, 2, 3, 4 y 5**.
 
 ### Módulo 1
 
@@ -862,9 +928,20 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Exclusión de archivos de logs mediante `.gitignore`.
 - Incorporación de un endpoint de prueba para verificar los niveles de logging.
 
+### Módulo 5
+
+- Incorporación de Swagger para documentar la API mediante OpenAPI 3.0.
+- Configuración independiente de Swagger en `src/docs/swagger.config.js`.
+- Integración de Swagger UI en la ruta `/api/docs`.
+- Documentación de los endpoints de Users, Products, Stores, Orders, Mocks y Logger.
+- Documentación de métodos HTTP, parámetros, cuerpos de solicitud y respuestas.
+- Definición de esquemas reutilizables para usuarios, pedidos, entregas, comercios y respuestas.
+- Documentación de los endpoints de generación de datos ficticios y carga mediante seed.
+- Documentación del endpoint de prueba del sistema de logging.
+- Verificación de Swagger UI y pruebas de endpoints documentados mediante Thunder Client.
+
 ### Pendiente para próximos módulos
 
-- Documentación Swagger.
 - Tests automatizados.
 - Multer.
 - Docker.

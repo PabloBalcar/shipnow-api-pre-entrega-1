@@ -11,11 +11,14 @@ import { ERRORS } from "./constants/errors.js";
 import logger from "./config/logger.js";
 import loggerRouter from "./routes/logger.router.js";
 import { config } from "./config/env.config.js";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpecs } from "./docs/swagger.config.js";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
 if (config.nodeEnv !== "production") {
   app.use("/api/logger", loggerRouter);
 }
@@ -35,6 +38,9 @@ app.use((req, res, next) => {
 
   next();
 });
+
+// Documentación interactiva de la API.
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 app.get("/", (req, res) => {
   res.json({
