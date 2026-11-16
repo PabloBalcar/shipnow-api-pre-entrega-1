@@ -75,16 +75,18 @@ Respuesta esperada:
 
 El proyecto utiliza una arquitectura por capas para separar responsabilidades y facilitar el mantenimiento.
 
-```txt
+```text
 src/
 ├── config/
 │   ├── env.config.js
-│   └── db.js
+│   ├── db.js
+│   └── logger.js
 ├── constants/
 │   ├── index.js
 │   └── errors.js
 ├── controllers/
 │   ├── mocks.controller.js
+│   ├── logger.controller.js
 │   └── ...
 ├── middlewares/
 │   └── error.middleware.js
@@ -96,6 +98,7 @@ src/
 │   └── ...
 ├── routes/
 │   ├── mocks.router.js
+│   ├── logger.router.js
 │   └── ...
 ├── services/
 │   ├── mocks.service.js
@@ -109,7 +112,7 @@ src/
 
 ### Flujo de una petición
 
-```txt
+```text
 Request → Router → Controller → Service → Repository → Model / MongoDB
 ```
 
@@ -157,7 +160,7 @@ El diccionario de errores se encuentra en `src/constants/errors.js` y centraliza
 
 ### Roles de usuario
 
-```txt
+```text
 ADMIN
 USER
 COURIER
@@ -169,7 +172,7 @@ COURIER
 
 ### Estados de pedidos
 
-```txt
+```text
 created
 assigned
 picked_up
@@ -180,7 +183,7 @@ cancelled
 
 ### Prioridades de entrega
 
-```txt
+```text
 low
 normal
 high
@@ -188,7 +191,7 @@ high
 
 ### Estados de entregas
 
-```txt
+```text
 pending
 assigned
 in_transit
@@ -198,7 +201,7 @@ cancelled
 
 ### Estados de productos
 
-```txt
+```text
 available
 out_of_stock
 ```
@@ -372,7 +375,7 @@ Body de ejemplo:
 
 El total se calcula automáticamente:
 
-```txt
+```text
 2 unidades x $1500 = $3000
 1 unidad x $800 = $800
 
@@ -412,7 +415,7 @@ Cada entrega tiene una referencia a un pedido y puede tener asignado un repartid
 
 ### Estados disponibles
 
-```txt
+```text
 pending
 assigned
 in_transit
@@ -545,7 +548,7 @@ El proyecto implementa un sistema centralizado de manejo de errores para mantene
 
 ### Flujo de manejo de errores
 
-```txt
+```text
 Request
    ↓
 Router
@@ -701,9 +704,109 @@ Resultado esperado: HTTP `404`, código `USER_NOT_FOUND`.
 
 ---
 
+## Sistema de logging y monitoreo
+
+El proyecto incorpora **Winston** para registrar eventos importantes, solicitudes HTTP y errores durante la ejecución de la API.
+
+La configuración se centraliza en `src/config/logger.js`, permitiendo utilizar el mismo logger desde los distintos componentes de la aplicación.
+
+### Dependencias utilizadas
+
+- `winston`: gestión y clasificación de registros.
+- `winston-daily-rotate-file`: almacenamiento y rotación automática de archivos de log.
+
+### Niveles personalizados
+
+Se definen seis niveles de logging, ordenados de menor a mayor gravedad:
+
+| Nivel     | Descripción                                                        |
+| --------- | ------------------------------------------------------------------ |
+| `debug`   | Información detallada para depuración.                             |
+| `http`    | Registro de solicitudes HTTP.                                      |
+| `info`    | Eventos importantes del funcionamiento normal.                     |
+| `warning` | Situaciones anormales o errores controlados.                       |
+| `error`   | Errores inesperados de la aplicación.                              |
+| `fatal`   | Fallas críticas que pueden impedir el funcionamiento del servidor. |
+
+### Comportamiento según el entorno
+
+El nivel mínimo de registro depende de la variable `NODE_ENV`:
+
+- **Development:** registra desde `debug`, incluyendo todos los niveles.
+- **Test:** registra desde `debug`.
+- **Production:** registra desde `info`, excluyendo `debug` y `http`.
+
+Los registros se muestran en consola y también se almacenan en archivos.
+
+### Eventos registrados
+
+El logger está integrado en distintos componentes:
+
+- `server.js`: registra el inicio del servidor y los errores críticos de inicialización.
+- `config/db.js`: registra la conexión exitosa o fallida con MongoDB.
+- `app.js`: registra solicitudes HTTP, incluyendo método, ruta, código de estado y duración.
+- `middlewares/error.middleware.js`: registra errores controlados y errores inesperados.
+- `services/mocks.service.js`: registra la generación y carga de datos ficticios, además de las cantidades inválidas.
+- `services/orders.service.js`: registra la creación de pedidos y los pedidos inexistentes.
+
+Los registros evitan incluir contraseñas, credenciales y otros datos sensibles.
+
+### Almacenamiento y rotación de archivos
+
+Los archivos se generan dentro de la carpeta `logs/`.
+
+Se utilizan dos tipos de archivos:
+
+- `combined-YYYY-MM-DD.log`: contiene los registros correspondientes al nivel mínimo configurado para el entorno.
+- `error-YYYY-MM-DD.log`: contiene exclusivamente los niveles `error` y `fatal`.
+
+La rotación se realiza diariamente mediante `winston-daily-rotate-file`, conservando los archivos durante 14 días. Los archivos antiguos se comprimen automáticamente.
+
+La carpeta `logs/` y los archivos `*.log` están incluidos en `.gitignore`, por lo que no se versionan ni se suben al repositorio.
+
+### Endpoint de prueba
+
+Se incorpora un endpoint para comprobar los seis niveles de Winston:
+
+```http
+GET /api/logger/test
+```
+
+URL local:
+
+```http
+GET http://localhost:8080/api/logger/test
+```
+
+Respuesta esperada:
+
+```json
+{
+  "status": "success",
+  "message": "Prueba de los seis niveles de Winston ejecutada correctamente",
+  "levels": ["debug", "http", "info", "warning", "error", "fatal"]
+}
+```
+
+El endpoint genera un registro de cada nivel para verificar su comportamiento en consola y archivos.
+
+**Importante:** este endpoint está habilitado únicamente fuera del entorno de producción y se utiliza exclusivamente para pruebas.
+
+### Ejemplo práctico de utilización de niveles
+
+En una operación como una transferencia de fondos:
+
+- `debug`: registrar información técnica para seguir el proceso de transferencia.
+- `warning`: advertir que una operación fue rechazada por fondos insuficientes.
+- `info`: registrar que una transferencia se completó correctamente.
+- `error`: registrar un fallo inesperado durante la operación, incluyendo el stack trace cuando corresponda.
+- `fatal`: registrar una falla crítica que impida continuar con el funcionamiento del sistema.
+
+---
+
 ## Estado actual del proyecto
 
-Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1, 2 y 3**.
+Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1, 2, 3 y 4**.
 
 ### Módulo 1
 
@@ -744,9 +847,23 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Derivación de rutas inexistentes al middleware global.
 - Pruebas de casos exitosos y errores mediante Thunder Client.
 
+### Módulo 4
+
+- Incorporación de Winston para el registro de eventos.
+- Configuración centralizada del logger.
+- Definición de seis niveles personalizados: `debug`, `http`, `info`, `warning`, `error` y `fatal`.
+- Configuración de niveles según el entorno de ejecución.
+- Integración con el middleware global de errores.
+- Registro de solicitudes HTTP y duración de las respuestas.
+- Registro de eventos importantes de pedidos, mocks y conexión a MongoDB.
+- Persistencia de logs en archivos.
+- Rotación diaria y retención de 14 días.
+- Separación de registros generales y errores críticos.
+- Exclusión de archivos de logs mediante `.gitignore`.
+- Incorporación de un endpoint de prueba para verificar los niveles de logging.
+
 ### Pendiente para próximos módulos
 
-- Logger profesional.
 - Documentación Swagger.
 - Tests automatizados.
 - Multer.

@@ -2,6 +2,7 @@ import { config } from "../config/env.config.js";
 import { NODE_ENVIRONMENTS } from "../constants/index.js";
 import { ERRORS } from "../constants/errors.js";
 import { AppError } from "../utils/app-error.js";
+import logger from "../config/logger.js";
 
 export const errorHandler = (error, req, res, next) => {
   if (res.headersSent) {
@@ -46,9 +47,21 @@ export const errorHandler = (error, req, res, next) => {
     errorData = ERRORS.DATABASE_ERROR;
   }
 
-  // Los errores inesperados se registran en el servidor.
+  // Registro de errores mediante Winston.
   if (errorData.statusCode >= 500) {
-    console.error(error);
+    logger.error("Error inesperado en la aplicación", {
+      error: error.message,
+      stack: error.stack,
+      method: req.method,
+      url: req.originalUrl,
+    });
+  } else {
+    logger.warning("Error controlado en la aplicación", {
+      code: errorData.code,
+      message: errorData.message,
+      method: req.method,
+      url: req.originalUrl,
+    });
   }
 
   // En producción no se exponen detalles internos.
