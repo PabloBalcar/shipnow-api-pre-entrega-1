@@ -44,3 +44,22 @@ export const deleteUser = async (req, res, next) => {
     next(error);
   }
 };
+
+// Cargar un documento asociado a un usuario.
+export const uploadUserDocument = async (req, res, next) => {
+  try {
+    const user = await usersService.addDocument(
+      req.params.uid,
+      req.file,
+      req.body.type,
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "Documento cargado correctamente",
+      payload: user,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

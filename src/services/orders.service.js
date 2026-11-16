@@ -1,7 +1,12 @@
+import { unlink } from "node:fs/promises";
 import { ordersRepository } from "../repositories/orders.repository.js";
 import { usersRepository } from "../repositories/users.repository.js";
 import { storesRepository } from "../repositories/stores.repository.js";
-import { ORDER_STATUS, DELIVERY_PRIORITY } from "../constants/index.js";
+import {
+  ORDER_STATUS,
+  DELIVERY_PRIORITY,
+  DOCUMENT_TYPES,
+} from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
 import logger from "../config/logger.js";
@@ -82,5 +87,46 @@ export const ordersService = {
     const order = await ordersRepository.deleteById(id);
     if (!order) throw notFound(id);
     return order;
+  },
+
+  // Asociar un comprobante al pedido y guardar sus metadatos.
+  addProof: async (id, file) => {
+    if (!file) {
+      throw new AppError(ERRORS.FILE_REQUIRED);
+    }
+
+    try {
+      const existingOrder = await ordersRepository.findById(id);
+
+      if (!existingOrder) {
+        throw notFound(id);
+      }
+
+      const proof = {
+        originalName: file.originalname,
+        fileName: file.filename,
+        path: file.path,
+        mimeType: file.mimetype,
+        size: file.size,
+        type: DOCUMENT_TYPES.DELIVERY_PROOF,
+        uploadedAt: new Date(),
+      };
+
+      const updatedOrder = await ordersRepository.addProof(id, proof);
+
+      if (!updatedOrder) {
+        throw notFound(id);
+      }
+
+      logger.info("Comprobante asociado al pedido correctamente", {
+        orderId: id,
+        fileName: file.filename,
+      });
+
+      return updatedOrder;
+    } catch (error) {
+      await unlink(file.path).catch(() => {});
+      throw error;
+    }
   },
 };

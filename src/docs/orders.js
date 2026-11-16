@@ -141,3 +141,40 @@
  *       500:
  *         description: Error interno del servidor
  */
+
+/**
+ * @openapi
+ * /api/orders/{oid}/proof:
+ *   post:
+ *     summary: Cargar un comprobante de un pedido
+ *     tags: [Orders]
+ *     parameters:
+ *       - in: path
+ *         name: oid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID del pedido
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - proof
+ *             properties:
+ *               proof:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF, JPEG, PNG o WebP de hasta 5 MB
+ *     responses:
+ *       200:
+ *         description: Comprobante cargado correctamente
+ *       400:
+ *         description: Archivo faltante, tipo de archivo inválido o tamaño excedido
+ *       404:
+ *         description: Pedido no encontrado
+ *       500:
+ *         description: Error interno del servidor
+ */
