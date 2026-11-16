@@ -1,6 +1,9 @@
+import { unlink } from "node:fs/promises";
 import { usersRepository } from "../repositories/users.repository.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
+import { DOCUMENT_TYPES } from "../constants/index.js";
+import logger from "../config/logger.js";
 
 const notFound = () => new AppError(ERRORS.USER_NOT_FOUND);
 
@@ -38,5 +41,57 @@ export const usersService = {
     const user = await usersRepository.deleteById(id);
     if (!user) throw notFound();
     return user;
+  },
+
+  // Agregar un documento al usuario y guardar sus metadatos.
+  addDocument: async (id, file, type) => {
+    if (!file) {
+      throw new AppError(ERRORS.FILE_REQUIRED);
+    }
+
+    try {
+      const allowedTypes = [
+        DOCUMENT_TYPES.USER_DOCUMENT,
+        DOCUMENT_TYPES.DRIVER_LICENSE,
+        DOCUMENT_TYPES.ADMINISTRATIVE_DOCUMENT,
+      ];
+
+      if (!allowedTypes.includes(type)) {
+        throw new AppError(ERRORS.INVALID_DOCUMENT_TYPE);
+      }
+
+      const existingUser = await usersRepository.findById(id);
+
+      if (!existingUser) {
+        throw notFound();
+      }
+
+      const document = {
+        originalName: file.originalname,
+        fileName: file.filename,
+        path: file.path,
+        mimeType: file.mimetype,
+        size: file.size,
+        type,
+        uploadedAt: new Date(),
+      };
+
+      const updatedUser = await usersRepository.addDocument(id, document);
+
+      if (!updatedUser) {
+        throw notFound();
+      }
+
+      logger.info("Documento de usuario cargado correctamente", {
+        userId: id,
+        fileName: file.filename,
+        documentType: type,
+      });
+
+      return updatedUser;
+    } catch (error) {
+      await unlink(file.path).catch(() => {});
+      throw error;
+    }
   },
 };

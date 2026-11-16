@@ -87,6 +87,37 @@ export const ERRORS = Object.freeze({
     message: "Ruta no encontrada",
     statusCode: 404,
   },
+
+  FILE_REQUIRED: {
+    code: "FILE_REQUIRED",
+    message: "Es obligatorio adjuntar un archivo",
+    statusCode: 400,
+  },
+  INVALID_FILE_TYPE: {
+    code: "INVALID_FILE_TYPE",
+    message: "El tipo de archivo no está permitido",
+    statusCode: 400,
+  },
+  FILE_TOO_LARGE: {
+    code: "FILE_TOO_LARGE",
+    message: "El archivo supera el tamaño máximo permitido de 5 MB",
+    statusCode: 400,
+  },
+  INVALID_UPLOAD_FIELD: {
+    code: "INVALID_UPLOAD_FIELD",
+    message: "El campo de archivo enviado no es válido",
+    statusCode: 400,
+  },
+  INVALID_DOCUMENT_TYPE: {
+    code: "INVALID_DOCUMENT_TYPE",
+    message: "El tipo de documento no es válido",
+    statusCode: 400,
+  },
+  UPLOAD_ERROR: {
+    code: "UPLOAD_ERROR",
+    message: "No se pudo procesar el archivo",
+    statusCode: 500,
+  },
   INTERNAL_SERVER_ERROR: {
     code: "INTERNAL_SERVER_ERROR",
     message: "Error interno del servidor",

@@ -39,3 +39,10 @@ export const NODE_ENVIRONMENTS = Object.freeze({
   TEST: "test",
   PRODUCTION: "production",
 });
+
+export const DOCUMENT_TYPES = Object.freeze({
+  USER_DOCUMENT: "user_document",
+  DRIVER_LICENSE: "driver_license",
+  ADMINISTRATIVE_DOCUMENT: "administrative_document",
+  DELIVERY_PROOF: "delivery_proof",
+});

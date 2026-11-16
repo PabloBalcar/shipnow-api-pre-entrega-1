@@ -22,6 +22,17 @@ export const errorHandler = (error, req, res, next) => {
     details = error.details;
   }
 
+  // Errores generados por Multer.
+  else if (error.name === "MulterError") {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      errorData = ERRORS.FILE_TOO_LARGE;
+    } else if (error.code === "LIMIT_UNEXPECTED_FILE") {
+      errorData = ERRORS.INVALID_UPLOAD_FIELD;
+    } else {
+      errorData = ERRORS.UPLOAD_ERROR;
+    }
+  }
+
   // Errores de validación de Mongoose.
   else if (error.name === "ValidationError") {
     errorData = ERRORS.VALIDATION_ERROR;

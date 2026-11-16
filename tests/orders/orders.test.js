@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import request from "supertest";
 import mongoose from "mongoose";
+import { unlink } from "node:fs/promises";
 import app from "../../src/app.js";
 import UserModel from "../../src/models/user.model.js";
 import StoreModel from "../../src/models/store.model.js";
@@ -9,6 +10,7 @@ import OrderModel from "../../src/models/order.model.js";
 describe("Pedidos", function () {
   let testUser;
   let testStore;
+  let uploadedFilePath;
 
   const orderData = () => ({
     customer: testUser._id.toString(),
@@ -39,6 +41,10 @@ describe("Pedidos", function () {
   });
 
   after(async function () {
+    if (uploadedFilePath) {
+      await unlink(uploadedFilePath).catch(() => {});
+    }
+
     await OrderModel.deleteMany({ customer: testUser._id });
     await StoreModel.deleteOne({ _id: testStore._id });
     await UserModel.deleteOne({ _id: testUser._id });
@@ -131,6 +137,103 @@ describe("Pedidos", function () {
       expect(response.body.status).to.equal("error");
       expect(response.body.error).to.equal("INVALID_ORDER_STATUS");
       expect(response.body.details.validStatuses).to.include("created");
+    });
+  });
+
+  describe("POST /api/orders/:oid/proof", function () {
+    it("debe cargar correctamente un comprobante del pedido", async function () {
+      const order = await OrderModel.create({
+        ...orderData(),
+        total: 3000,
+      });
+
+      const response = await request(app)
+        .post(`/api/orders/${order._id}/proof`)
+        .attach("proof", Buffer.from("%PDF-1.4 comprobante de prueba"), {
+          filename: "comprobante.pdf",
+          contentType: "application/pdf",
+        });
+
+      expect(response.status).to.equal(200);
+      expect(response.body.status).to.equal("success");
+
+      const proof = response.body.payload.proof;
+
+      expect(proof.originalName).to.equal("comprobante.pdf");
+      expect(proof.mimeType).to.equal("application/pdf");
+      expect(proof.type).to.equal("delivery_proof");
+      expect(proof).to.have.property("fileName");
+      expect(proof).to.have.property("path");
+
+      uploadedFilePath = proof.path;
+    });
+
+    it("debe devolver 400 si no se adjunta un comprobante", async function () {
+      const order = await OrderModel.create({
+        ...orderData(),
+        total: 3000,
+      });
+
+      const response = await request(app).post(
+        `/api/orders/${order._id}/proof`,
+      );
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("FILE_REQUIRED");
+    });
+
+    it("debe devolver 400 si el tipo de archivo no está permitido", async function () {
+      const order = await OrderModel.create({
+        ...orderData(),
+        total: 3000,
+      });
+
+      const response = await request(app)
+        .post(`/api/orders/${order._id}/proof`)
+        .attach("proof", Buffer.from("archivo de texto"), {
+          filename: "comprobante.txt",
+          contentType: "text/plain",
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_FILE_TYPE");
+    });
+
+    it("debe devolver 400 si el archivo supera los 5 MB", async function () {
+      const order = await OrderModel.create({
+        ...orderData(),
+        total: 3000,
+      });
+
+      const largeFile = Buffer.alloc(5 * 1024 * 1024 + 1);
+
+      const response = await request(app)
+        .post(`/api/orders/${order._id}/proof`)
+        .attach("proof", largeFile, {
+          filename: "comprobante-grande.pdf",
+          contentType: "application/pdf",
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("FILE_TOO_LARGE");
+    });
+
+    it("debe devolver 404 si el pedido no existe", async function () {
+      const nonexistentId = new mongoose.Types.ObjectId();
+
+      const response = await request(app)
+        .post(`/api/orders/${nonexistentId}/proof`)
+        .attach("proof", Buffer.from("%PDF-1.4 comprobante de prueba"), {
+          filename: "comprobante.pdf",
+          contentType: "application/pdf",
+        });
+
+      expect(response.status).to.equal(404);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("ORDER_NOT_FOUND");
     });
   });
 });
