@@ -8,11 +8,33 @@ import mocksRouter from "./routes/mocks.router.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 import { AppError } from "./utils/app-error.js";
 import { ERRORS } from "./constants/errors.js";
+import logger from "./config/logger.js";
+import loggerRouter from "./routes/logger.router.js";
+import { config } from "./config/env.config.js";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+if (config.nodeEnv !== "production") {
+  app.use("/api/logger", loggerRouter);
+}
+
+// Middleware para registrar las peticiones HTTP.
+app.use((req, res, next) => {
+  const startTime = Date.now();
+
+  res.on("finish", () => {
+    logger.http("Solicitud HTTP", {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startTime,
+    });
+  });
+
+  next();
+});
 
 app.get("/", (req, res) => {
   res.json({

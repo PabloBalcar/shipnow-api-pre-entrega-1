@@ -12,11 +12,17 @@ import {
 } from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
+import logger from "../config/logger.js";
 
 const validateQuantity = (qty) => {
   const quantity = Number(qty);
 
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+    logger.warning("Cantidad inválida solicitada para generar mocks", {
+      quantity: qty,
+      allowedRange: "1-100",
+    });
+
     throw new AppError(ERRORS.INVALID_MOCK_AMOUNT);
   }
 
@@ -54,6 +60,11 @@ const generateRelatedMocks = (qty) => {
     }),
   );
 
+  logger.info("Mocks relacionados generados correctamente", {
+    quantity,
+    collections: ["users", "couriers", "stores", "orders", "deliveries"],
+  });
+
   return { users, couriers, stores, orders, deliveries };
 };
 
@@ -61,19 +72,27 @@ export const mocksService = {
   generateUsers: (qty) => {
     const quantity = validateQuantity(qty);
 
-    return removePasswords(
+    const users = removePasswords(
       Array.from({ length: quantity }, () => generateMockUser()),
     );
+
+    logger.info("Usuarios mock generados", { quantity });
+
+    return users;
   },
 
   generateCouriers: (qty) => {
     const quantity = validateQuantity(qty);
 
-    return removePasswords(
+    const couriers = removePasswords(
       Array.from({ length: quantity }, () =>
         generateMockUser(USER_ROLES.COURIER),
       ),
     );
+
+    logger.info("Repartidores mock generados", { quantity });
+
+    return couriers;
   },
 
   generateOrders: (qty) => {
@@ -98,7 +117,7 @@ export const mocksService = {
       const insertedDeliveries =
         await mocksRepository.insertDeliveries(deliveries);
 
-      return {
+      const result = {
         insertados: {
           usuarios: insertedUsers.length,
           repartidores: insertedCouriers.length,
@@ -107,6 +126,12 @@ export const mocksService = {
           entregas: insertedDeliveries.length,
         },
       };
+
+      logger.info("Carga de mocks en base de datos completada", {
+        inserted: result.insertados,
+      });
+
+      return result;
     } catch (error) {
       // Conservamos los errores que el middleware ya sabe interpretar.
       if (

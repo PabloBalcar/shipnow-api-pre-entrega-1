@@ -4,19 +4,26 @@ import { storesRepository } from "../repositories/stores.repository.js";
 import { ORDER_STATUS, DELIVERY_PRIORITY } from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
+import logger from "../config/logger.js";
 
-const notFound = () => new AppError(ERRORS.ORDER_NOT_FOUND);
+const notFound = (id) => {
+  logger.warning("Pedido no encontrado", { orderId: id });
+  return new AppError(ERRORS.ORDER_NOT_FOUND);
+};
 
 export const ordersService = {
   // Regla de negocio pura (sin base de datos): fácil de testear.
   calculateTotal: (items) =>
-    items.reduce((accumulator, item) => accumulator + item.price * item.quantity, 0),
+    items.reduce(
+      (accumulator, item) => accumulator + item.price * item.quantity,
+      0,
+    ),
 
   getAll: () => ordersRepository.findAll(),
 
   getById: async (id) => {
     const order = await ordersRepository.findById(id);
-    if (!order) throw notFound();
+    if (!order) throw notFound(id);
     return order;
   },
 
@@ -39,7 +46,7 @@ export const ordersService = {
       throw new AppError(ERRORS.STORE_NOT_FOUND);
     }
 
-    return ordersRepository.create({
+    const order = await ordersRepository.create({
       customer,
       store,
       items,
@@ -48,6 +55,12 @@ export const ordersService = {
       total: ordersService.calculateTotal(items),
       status: ORDER_STATUS.CREATED,
     });
+
+    logger.info("Pedido creado correctamente", {
+      orderId: order._id.toString(),
+    });
+
+    return order;
   },
 
   updateStatus: async (id, status) => {
@@ -61,13 +74,13 @@ export const ordersService = {
     }
 
     const order = await ordersRepository.updateStatus(id, status);
-    if (!order) throw notFound();
+    if (!order) throw notFound(id);
     return order;
   },
 
   delete: async (id) => {
     const order = await ordersRepository.deleteById(id);
-    if (!order) throw notFound();
+    if (!order) throw notFound(id);
     return order;
   },
 };
