@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "./env.config.js";
 
-// Winston utiliza números menores para los niveles más graves.
 const customLevels = {
   levels: {
     fatal: 0,
@@ -30,9 +29,6 @@ const logsDirectory = path.resolve("logs");
 
 fs.mkdirSync(logsDirectory, { recursive: true });
 
-const isProduction = config.nodeEnv === "production";
-const minimumLevel = isProduction ? "info" : "debug";
-
 const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
@@ -53,11 +49,11 @@ const fileFormat = winston.format.combine(
 
 const logger = winston.createLogger({
   levels: customLevels.levels,
-  level: minimumLevel,
+  level: config.logLevel,
   defaultMeta: { service: "shipnow-api" },
   transports: [
     new winston.transports.Console({
-      level: minimumLevel,
+      level: config.logLevel,
       format: consoleFormat,
     }),
 
@@ -66,7 +62,7 @@ const logger = winston.createLogger({
       datePattern: "YYYY-MM-DD",
       maxFiles: "14d",
       zippedArchive: true,
-      level: minimumLevel,
+      level: config.logLevel,
       format: fileFormat,
     }),
 

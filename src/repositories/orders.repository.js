@@ -12,7 +12,14 @@ const withRelations = (query) =>
     .lean();
 
 export const ordersRepository = {
-  findAll: () => withRelations(OrderModel.find().sort({ createdAt: -1 })),
+  // Obtiene los pedidos de una página determinada.
+  findAll: ({ skip, limit }) =>
+    withRelations(
+      OrderModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+    ),
+
+  // Cuenta el total de pedidos registrados.
+  countAll: () => OrderModel.countDocuments(),
 
   findById: (id) => withRelations(OrderModel.findById(id)),
 

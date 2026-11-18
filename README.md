@@ -1,6 +1,10 @@
 # ShipNow API
 
-API REST de logística y envíos construida con Node.js, Express y MongoDB (Mongoose), organizada en **arquitectura por capas** (Router → Controller → Service → Repository).
+API REST de logística y envíos construida con Node.js, Express y MongoDB (Mongoose), organizada mediante una **arquitectura por capas** (Router → Controller → Service → Repository).
+
+El proyecto incorpora manejo centralizado de errores, logging profesional, documentación con Swagger, testing automatizado, carga de archivos y configuración para ejecución mediante Docker.
+
+---
 
 ## Cómo correr el proyecto localmente
 
@@ -24,11 +28,25 @@ Configurar las siguientes variables:
 
 ```env
 PORT=8080
-MONGODB_URI=mongodb://127.0.0.1:27017/shipnow
 NODE_ENV=development
+LOG_LEVEL=debug
+MONGODB_URI=mongodb://127.0.0.1:27017/shipnow
 ```
 
-Las tres variables son **obligatorias**.
+Las variables `PORT`, `NODE_ENV` y `MONGODB_URI` son obligatorias.
+
+La variable `LOG_LEVEL` es opcional y permite configurar el nivel mínimo de logging.
+
+Valores permitidos:
+
+- `fatal`
+- `error`
+- `warning`
+- `info`
+- `http`
+- `debug`
+
+Si no se especifica, se utiliza `debug` en desarrollo y testing, e `info` en producción.
 
 `NODE_ENV` acepta los siguientes valores:
 
@@ -54,19 +72,27 @@ npm start
 
 ### 4. Verificar el funcionamiento
 
-Realizar una petición:
+Realizar una petición al endpoint de health check:
 
-````http
-GET http://localhost:8080/api/health```
+```http
+GET http://localhost:8080/health
+```
 
 Respuesta esperada:
 
 ```json
 {
   "status": "success",
-  "message": "API funcionando"
+  "environment": "development",
+  "database": "connected",
+  "uptime": 20,
+  "timestamp": "2026-11-18T01:41:36.335Z"
 }
-````
+```
+
+El endpoint informa el estado de la aplicación, el entorno de ejecución, el estado de la conexión con MongoDB, el tiempo de actividad y la fecha de la consulta.
+
+Devuelve HTTP `200` cuando la base de datos está conectada y HTTP `503` cuando no está disponible.
 
 ---
 
@@ -88,7 +114,8 @@ src/
 │   ├── logger.controller.js
 │   └── ...
 ├── middlewares/
-│   └── error.middleware.js
+│   ├── error.middleware.js
+│   └── ...
 ├── models/
 │   ├── delivery.model.js
 │   └── ...
@@ -150,8 +177,9 @@ Las variables de entorno se centralizan en `src/config/env.config.js`.
 La aplicación valida:
 
 - Que existan `PORT`, `MONGODB_URI` y `NODE_ENV`.
-- Que `PORT` sea un número entero positivo.
+- Que `PORT` sea un número entero dentro del rango permitido.
 - Que `NODE_ENV` tenga un valor permitido.
+- Que `LOG_LEVEL`, cuando se especifica, corresponda a uno de los niveles admitidos.
 
 Las constantes del dominio se encuentran en `src/constants/index.js` y utilizan `Object.freeze()` para evitar modificaciones accidentales.
 
@@ -438,7 +466,7 @@ La lógica de generación está separada en las siguientes capas:
 
 ### Generar datos ficticios sin guardarlos
 
-Los siguientes endpoints permiten obtener datos simulados sin insertarlos en MongoDB.
+Los siguientes endpoints permiten obtener datos simulados sin insertarlos en MongoDB:
 
 ```http
 GET /api/mocks/users?qty=2
@@ -569,7 +597,7 @@ Los errores de negocio se detectan principalmente en los Services. Los Controlle
 
 ### Formato de respuesta
 
-Todas las respuestas de error siguen esta estructura:
+Las respuestas de error siguen esta estructura:
 
 ```json
 {
@@ -729,13 +757,28 @@ Se definen seis niveles de logging, ordenados de menor a mayor gravedad:
 
 ### Comportamiento según el entorno
 
-El nivel mínimo de registro depende de la variable `NODE_ENV`:
+El nivel mínimo de registro depende de la configuración del entorno:
 
-- **Development:** registra desde `debug`, incluyendo todos los niveles.
-- **Test:** registra desde `debug`.
-- **Production:** registra desde `info`, excluyendo `debug` y `http`.
+- **Development:** utiliza `debug` por defecto.
+- **Test:** utiliza `debug` por defecto.
+- **Production:** utiliza `info` por defecto.
 
 Los registros se muestran en consola y también se almacenan en archivos.
+
+### Configuración mediante LOG_LEVEL
+
+El nivel mínimo de logging también puede configurarse mediante la variable de entorno `LOG_LEVEL`.
+
+Los valores permitidos son:
+
+- `fatal`
+- `error`
+- `warning`
+- `info`
+- `http`
+- `debug`
+
+Esto permite ajustar la cantidad de información registrada sin modificar el código de la aplicación.
 
 ### Eventos registrados
 
@@ -773,8 +816,8 @@ GET /api/logger/test
 
 URL local:
 
-```http
-GET http://localhost:8080/api/logger/test
+```text
+http://localhost:8080/api/logger/test
 ```
 
 Respuesta esperada:
@@ -798,7 +841,7 @@ En una operación como una transferencia de fondos:
 - `debug`: registrar información técnica para seguir el proceso de transferencia.
 - `warning`: advertir que una operación fue rechazada por fondos insuficientes.
 - `info`: registrar que una transferencia se completó correctamente.
-- `error`: registrar un fallo inesperado durante la operación, incluyendo el stack trace cuando corresponda.
+- `error`: registrar un fallo inesperado durante la operación.
 - `fatal`: registrar una falla crítica que impida continuar con el funcionamiento del sistema.
 
 ---
@@ -811,7 +854,7 @@ El proyecto incorpora Swagger para documentar los endpoints de la API mediante l
 
 Con el servidor ejecutándose localmente, ingresar a:
 
-```http
+```text
 http://localhost:8080/api/docs
 ```
 
@@ -857,11 +900,7 @@ Esto permite reutilizar las definiciones en distintos endpoints y mantener una d
 
 ### Pruebas de la documentación
 
-Se verificó el acceso a Swagger UI y se probaron endpoints documentados mediante las solicitudes correspondientes:
-
-- `GET /api/users`: respuesta HTTP 200.
-- `GET /api/mocks/users?qty=3`: respuesta HTTP 200 y generación de tres usuarios ficticios sin exponer contraseñas.
-- `GET /api/logger/test`: respuesta HTTP 200 y ejecución de los seis niveles de Winston.
+Se verificó el acceso a Swagger UI y se probaron endpoints documentados mediante las solicitudes correspondientes.
 
 El endpoint `/api/logger/test` está disponible únicamente fuera del entorno de producción y se utiliza como herramienta de validación del sistema de logging.
 
@@ -879,7 +918,7 @@ Estas herramientas permiten ejecutar solicitudes HTTP contra la aplicación, com
 
 - `mocha`: ejecutor de pruebas.
 - `chai`: biblioteca de aserciones.
-- `supertest`: permite realizar solicitudes HTTP contra la aplicación Express.
+- `supertest`: permite realizar solicitudes HTTP contra la aplicación.
 
 ### Configuración del entorno de testing
 
@@ -899,31 +938,7 @@ El archivo `.env.test` no se versiona y está excluido mediante `.gitignore`.
 
 Antes de establecer la conexión, `tests/setup.js` verifica que `NODE_ENV` sea `test` y que la URI corresponda a `shipnow-test`. Si alguna condición no se cumple, las pruebas no se ejecutan.
 
-### Estructura de los tests
-
-```text
-tests/
-├── setup.js
-├── app.test.js
-├── users/
-│   └── users.test.js
-├── orders/
-│   └── orders.test.js
-├── mocks/
-│   └── mocks.test.js
-├── logger/
-│   └── logger.test.js
-└── docs/
-    └── docs.test.js
-```
-
 ### Ejecutar las pruebas
-
-Instalar las dependencias:
-
-```bash
-npm install
-```
 
 Ejecutar la suite completa:
 
@@ -944,16 +959,31 @@ El comando utiliza Mocha y carga previamente `tests/setup.js`, que configura el 
 
 - Listado de usuarios.
 - Respuesta 404 cuando un usuario no existe.
+- Paginación y carga de archivos.
 
 **Pedidos**
 
 - Listado de pedidos.
+- Paginación.
 - Creación exitosa y cálculo automático del total.
 - Validación de datos obligatorios.
 - Consulta de pedidos por ID.
 - Respuesta 404 para pedidos inexistentes.
 - Actualización de estados.
 - Rechazo de estados inválidos.
+- Carga de archivos.
+
+**Productos**
+
+- Listado de productos.
+- Paginación.
+- Filtrado por disponibilidad.
+- Filtrado por comercio.
+
+**Comercios**
+
+- Listado de comercios.
+- Paginación.
 
 **Mocks**
 
@@ -975,25 +1005,205 @@ El comando utiliza Mocha y carga previamente `tests/setup.js`, que configura el 
 
 Los tests crean los registros necesarios para probar las operaciones que dependen de MongoDB.
 
-Los datos generados por las pruebas de pedidos se eliminan al finalizar su suite. Las pruebas de mocking identifican los documentos nuevos y eliminan únicamente esos registros, preservando los documentos que ya existían.
+Los datos generados por las pruebas se limpian al finalizar las suites correspondientes, preservando los documentos que ya existían.
 
 La base `shipnow-test` debe mantenerse separada de la base utilizada durante el desarrollo.
 
 ### Resultado de las pruebas
 
-La suite funcional fue ejecutada dos veces consecutivas, obteniendo en ambas ejecuciones:
+La suite automatizada fue ejecutada correctamente:
 
 ```text
-19 passing (4s)
+46 passing (6s)
 ```
 
-Esto permite comprobar que las pruebas pueden repetirse correctamente sin depender de los datos generados en una ejecución anterior.
+Este resultado confirma que los 46 casos de prueba finalizaron satisfactoriamente en la última ejecución verificada.
+
+---
+
+## Carga de archivos con Multer
+
+El proyecto incorpora **Multer** para gestionar la recepción y el almacenamiento de archivos enviados mediante solicitudes HTTP.
+
+La configuración permite controlar los archivos recibidos y evitar cargas excesivas o de formatos no admitidos.
+
+### Características principales
+
+- Límite de tamaño de archivo de 5 MB.
+- Validación de tipos MIME permitidos.
+- Almacenamiento de archivos dentro de la carpeta `uploads/`.
+- Separación de directorios para documentos y comprobantes.
+- Manejo de errores durante la carga.
+
+Los directorios utilizados incluyen:
+
+```text
+uploads/
+├── documents/
+└── proofs/
+```
+
+La carpeta `uploads/` está excluida de Git mediante `.gitignore`, por lo que los archivos recibidos no se incorporan al repositorio.
+
+En Docker se utiliza un volumen persistente para conservar los archivos subidos aunque se elimine o se reemplace el contenedor.
+
+---
+
+## Producción y Docker
+
+El proyecto incorpora configuraciones para ejecutar la API en distintos entornos y facilitar su despliegue mediante Docker.
+
+### Configuración de producción
+
+La aplicación utiliza variables de entorno para adaptar su comportamiento según el entorno de ejecución.
+
+| Variable      | Descripción                           |
+| ------------- | ------------------------------------- |
+| `PORT`        | Puerto en el que escucha el servidor. |
+| `MONGODB_URI` | URI de conexión a MongoDB.            |
+| `NODE_ENV`    | Entorno de ejecución.                 |
+| `LOG_LEVEL`   | Nivel mínimo de logging.              |
+
+Las variables obligatorias se validan al iniciar la aplicación.
+
+En producción se utiliza `info` como nivel de logging predeterminado. Los endpoints de prueba del logger no están disponibles en este entorno.
+
+### Health check
+
+La API dispone del endpoint:
+
+```http
+GET /health
+```
+
+Informa el estado de la aplicación y de la conexión con MongoDB.
+
+Devuelve HTTP `200` cuando la base de datos está conectada y HTTP `503` cuando no está disponible.
+
+### Cierre ordenado del servidor
+
+El servidor escucha las señales `SIGINT` y `SIGTERM` para realizar un cierre ordenado.
+
+Durante el apagado:
+
+1. Se deja de aceptar nuevas conexiones HTTP.
+2. Se espera el cierre del servidor.
+3. Se desconecta MongoDB.
+4. Se finaliza el proceso.
+
+Esto permite evitar cierres abruptos y facilita la administración del contenedor.
+
+### Docker
+
+El proyecto incluye:
+
+- `Dockerfile`: define la construcción de la imagen de la API.
+- `.dockerignore`: excluye archivos innecesarios o sensibles del contexto de construcción.
+
+La imagen utiliza Node.js 24 sobre Debian Bookworm Slim, instala únicamente las dependencias de producción y ejecuta la aplicación con un usuario sin privilegios de root.
+
+### Construir la imagen
+
+Desde la raíz del proyecto:
+
+```bash
+docker build -t shipnow-api .
+```
+
+### Ejecutar el contenedor
+
+```bash
+docker run -d \
+  --name shipnow-api \
+  -p 8080:8080 \
+  --env-file .env \
+  -e NODE_ENV=production \
+  -e LOG_LEVEL=info \
+  -v shipnow-uploads:/app/uploads \
+  -v shipnow-logs:/app/logs \
+  shipnow-api
+```
+
+El archivo `.env` proporciona las variables necesarias para la conexión con MongoDB y la configuración del servidor.
+
+Las variables `NODE_ENV` y `LOG_LEVEL` se establecen explícitamente para esta ejecución.
+
+Los volúmenes permiten conservar los archivos subidos y los registros de logging fuera del ciclo de vida del contenedor.
+
+### Verificar el contenedor
+
+Consultar los contenedores activos:
+
+```bash
+docker ps
+```
+
+Consultar los registros:
+
+```bash
+docker logs shipnow-api
+```
+
+Verificar el health check:
+
+```bash
+curl http://localhost:8080/health
+```
+
+La respuesta esperada debe indicar:
+
+```json
+{
+  "status": "success",
+  "environment": "production",
+  "database": "connected",
+  "uptime": 20,
+  "timestamp": "..."
+}
+```
+
+### Acceder a Swagger desde Docker
+
+Con el contenedor en ejecución, la documentación está disponible en:
+
+```text
+http://localhost:8080/api/docs
+```
+
+### Detener el contenedor
+
+```bash
+docker stop shipnow-api
+```
+
+Para eliminar el contenedor después de detenerlo:
+
+```bash
+docker rm shipnow-api
+```
+
+Los volúmenes `shipnow-uploads` y `shipnow-logs` se mantienen independientes del contenedor.
+
+### Archivos excluidos de Docker y Git
+
+Se excluyen archivos y directorios que no deben formar parte de la imagen o del repositorio:
+
+- `node_modules/`
+- `.env`
+- `.env.test`
+- `.git/`
+- `logs/`
+- `uploads/`
+- `coverage/`
+- Archivos de log y temporales.
+
+Las variables sensibles se proporcionan durante la ejecución del contenedor y no se incorporan a la imagen.
 
 ---
 
 ## Estado actual del proyecto
 
-Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1, 2, 3, 4 y 5**.
+Esta versión incluye los requerimientos correspondientes a las **Pre-entregas de los Módulos 1 al 8**.
 
 ### Módulo 1
 
@@ -1061,8 +1271,49 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Documentación del endpoint de prueba del sistema de logging.
 - Verificación de Swagger UI y pruebas de endpoints documentados mediante Thunder Client.
 
-### Pendiente para próximos módulos
+### Módulo 6
 
-- Tests automatizados.
-- Multer.
-- Docker.
+- Incorporación de pruebas automatizadas utilizando Mocha, Chai y Supertest.
+- Configuración de un entorno de testing independiente.
+- Separación de la base de datos de pruebas respecto de desarrollo.
+- Configuración de la conexión y limpieza de datos de prueba.
+- Pruebas de aplicación, usuarios, pedidos, mocks, logger y documentación.
+- Verificación de respuestas HTTP, validaciones y errores.
+
+### Módulo 7
+
+- Incorporación de Multer para la recepción de archivos.
+- Configuración de límites de tamaño.
+- Validación de tipos MIME permitidos.
+- Organización del almacenamiento de documentos y comprobantes.
+- Integración de la carga de archivos con los recursos correspondientes.
+- Exclusión de archivos subidos mediante `.gitignore`.
+- Pruebas de funcionalidades relacionadas con la carga de archivos.
+
+### Módulo 8
+
+- Configuración de variables de entorno para desarrollo, testing y producción.
+- Validación de variables críticas al iniciar la aplicación.
+- Incorporación de `LOG_LEVEL` configurable.
+- Mejora del endpoint `/health`, incluyendo estado de la base de datos, entorno, uptime y timestamp.
+- Implementación del cierre ordenado del servidor mediante `SIGINT` y `SIGTERM`.
+- Incorporación de `Dockerfile`.
+- Incorporación de `.dockerignore`.
+- Construcción de la imagen `shipnow-api`.
+- Ejecución de la API en un contenedor Docker.
+- Configuración de variables de entorno externas al contenedor.
+- Persistencia de logs y archivos subidos mediante volúmenes Docker.
+- Verificación del funcionamiento en entorno `production`.
+- Comprobación de conexión con MongoDB desde el contenedor.
+- Verificación del health check mediante HTTP 200.
+
+---
+
+## Consideraciones finales
+
+- No subir archivos `.env` ni credenciales al repositorio.
+- Mantener separadas las bases de datos de desarrollo y testing.
+- No incorporar archivos de `uploads/` ni `logs/` al control de versiones.
+- Configurar las variables de entorno necesarias antes de iniciar la aplicación.
+- Utilizar los volúmenes Docker para conservar los archivos y registros generados durante la ejecución.
+- Revisar los permisos y la exposición de endpoints de prueba antes de realizar un despliegue público.

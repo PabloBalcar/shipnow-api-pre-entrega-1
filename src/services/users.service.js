@@ -4,11 +4,28 @@ import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
 import { DOCUMENT_TYPES } from "../constants/index.js";
 import logger from "../config/logger.js";
+import { getPaginationParams, buildPagination } from "../utils/pagination.js";
 
 const notFound = () => new AppError(ERRORS.USER_NOT_FOUND);
 
 export const usersService = {
-  getAll: () => usersRepository.findAll(),
+  getAll: async (query = {}) => {
+    const pagination = getPaginationParams(query);
+
+    const [users, total] = await Promise.all([
+      usersRepository.findAll(pagination),
+      usersRepository.countAll(),
+    ]);
+
+    return {
+      payload: users,
+      pagination: buildPagination({
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+      }),
+    };
+  },
 
   getById: async (id) => {
     const user = await usersRepository.findById(id);

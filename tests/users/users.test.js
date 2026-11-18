@@ -29,12 +29,47 @@ describe("Usuarios", function () {
   });
 
   describe("GET /api/users", function () {
-    it("debe devolver HTTP 200 y una lista de usuarios", async function () {
+    it("debe devolver una lista de usuarios con metadatos de paginación", async function () {
       const response = await request(app).get("/api/users");
 
       expect(response.status).to.equal(200);
-      expect(response.body).to.have.property("status", "success");
+      expect(response.body.status).to.equal("success");
       expect(response.body.payload).to.be.an("array");
+      expect(response.body.pagination).to.be.an("object");
+      expect(response.body.pagination.page).to.equal(1);
+      expect(response.body.pagination.limit).to.equal(10);
+      expect(response.body.pagination).to.have.property("total");
+      expect(response.body.pagination).to.have.property("totalPages");
+
+      response.body.payload.forEach((user) => {
+        expect(user).to.not.have.property("password");
+      });
+    });
+
+    it("debe respetar los parámetros page y limit", async function () {
+      const response = await request(app).get("/api/users?page=1&limit=1");
+
+      expect(response.status).to.equal(200);
+      expect(response.body.payload).to.be.an("array");
+      expect(response.body.payload.length).to.be.at.most(1);
+      expect(response.body.pagination.page).to.equal(1);
+      expect(response.body.pagination.limit).to.equal(1);
+    });
+
+    it("debe devolver 400 si page es inválido", async function () {
+      const response = await request(app).get("/api/users?page=0");
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+
+    it("debe devolver 400 si limit supera el máximo permitido", async function () {
+      const response = await request(app).get("/api/users?limit=101");
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
     });
   });
 
@@ -45,12 +80,9 @@ describe("Usuarios", function () {
       const response = await request(app).get(`/api/users/${nonexistentId}`);
 
       expect(response.status).to.equal(404);
-      expect(response.body).to.have.property("status", "error");
-      expect(response.body).to.have.property("error", "USER_NOT_FOUND");
-      expect(response.body).to.have.property(
-        "message",
-        "Usuario no encontrado",
-      );
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("USER_NOT_FOUND");
+      expect(response.body.message).to.equal("Usuario no encontrado");
     });
   });
 

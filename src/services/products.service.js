@@ -3,6 +3,7 @@ import { storesRepository } from "../repositories/stores.repository.js";
 import { PRODUCT_STATUS } from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
+import { getPaginationParams, buildPagination } from "../utils/pagination.js";
 
 const notFound = () => new AppError(ERRORS.PRODUCT_NOT_FOUND);
 const storeNotFound = () => new AppError(ERRORS.STORE_NOT_FOUND);
@@ -22,11 +23,33 @@ export const productsService = {
 
   // Por defecto solo se listan productos con stock.
   // Con ?includeOutOfStock=true se listan todos.
-  getAll: ({ includeOutOfStock, store } = {}) => {
+  getAll: async (query = {}) => {
+    const { includeOutOfStock, store } = query;
+    const pagination = getPaginationParams(query);
+
     const filters = {};
-    if (includeOutOfStock !== "true") filters.status = PRODUCT_STATUS.AVAILABLE;
-    if (store) filters.store = store;
-    return productsRepository.findAll(filters);
+
+    if (includeOutOfStock !== "true") {
+      filters.status = PRODUCT_STATUS.AVAILABLE;
+    }
+
+    if (store) {
+      filters.store = store;
+    }
+
+    const [products, total] = await Promise.all([
+      productsRepository.findAll(filters, pagination),
+      productsRepository.countAll(filters),
+    ]);
+
+    return {
+      payload: products,
+      pagination: buildPagination({
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+      }),
+    };
   },
 
   getById: async (id) => {
@@ -65,7 +88,10 @@ export const productsService = {
 
     validateStock(dataToUpdate.stock);
 
-    if (dataToUpdate.store && !(await storesRepository.exists(dataToUpdate.store))) {
+    if (
+      dataToUpdate.store &&
+      !(await storesRepository.exists(dataToUpdate.store))
+    ) {
       throw storeNotFound();
     }
 
