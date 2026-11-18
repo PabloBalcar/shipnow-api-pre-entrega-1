@@ -4,8 +4,17 @@ import UserModel from "../models/user.model.js";
 const PUBLIC_FIELDS = "-password";
 
 export const usersRepository = {
-  findAll: () =>
-    UserModel.find().select(PUBLIC_FIELDS).sort({ createdAt: -1 }).lean(),
+  // Obtiene los usuarios de una página determinada.
+  findAll: ({ skip, limit }) =>
+    UserModel.find()
+      .select(PUBLIC_FIELDS)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+  // Cuenta el total de usuarios registrados.
+  countAll: () => UserModel.countDocuments(),
 
   findById: (id) => UserModel.findById(id).select(PUBLIC_FIELDS).lean(),
 

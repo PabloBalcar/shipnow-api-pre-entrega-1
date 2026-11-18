@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import express from "express";
 import cors from "cors";
 import usersRouter from "./routes/users.router.js";
@@ -50,9 +51,14 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({
-    status: "success",
-    message: "API funcionando",
+  const databaseConnected = mongoose.connection.readyState === 1;
+
+  res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? "success" : "error",
+    environment: config.nodeEnv,
+    database: databaseConnected ? "connected" : "disconnected",
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -60,8 +66,9 @@ app.use("/api/users", usersRouter);
 app.use("/api/stores", storesRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/products", productsRouter);
-app.use("/api/mocks", mocksRouter);
-
+if (config.nodeEnv !== "production") {
+  app.use("/api/mocks", mocksRouter);
+}
 // Las rutas inexistentes también pasan por el middleware global.
 app.use((req, res, next) => {
   next(new AppError(ERRORS.ROUTE_NOT_FOUND));

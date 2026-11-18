@@ -1,11 +1,28 @@
 import { storesRepository } from "../repositories/stores.repository.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
+import { getPaginationParams, buildPagination } from "../utils/pagination.js";
 
 const notFound = () => new AppError(ERRORS.STORE_NOT_FOUND);
 
 export const storesService = {
-  getAll: () => storesRepository.findAll(),
+  getAll: async (query = {}) => {
+    const pagination = getPaginationParams(query);
+
+    const [stores, total] = await Promise.all([
+      storesRepository.findAll(pagination),
+      storesRepository.countAll(),
+    ]);
+
+    return {
+      payload: stores,
+      pagination: buildPagination({
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+      }),
+    };
+  },
 
   getById: async (id) => {
     const store = await storesRepository.findById(id);

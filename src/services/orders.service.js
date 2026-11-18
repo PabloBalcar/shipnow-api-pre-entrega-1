@@ -10,6 +10,7 @@ import {
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
 import logger from "../config/logger.js";
+import { getPaginationParams, buildPagination } from "../utils/pagination.js";
 
 const notFound = (id) => {
   logger.warning("Pedido no encontrado", { orderId: id });
@@ -24,8 +25,23 @@ export const ordersService = {
       0,
     ),
 
-  getAll: () => ordersRepository.findAll(),
+  getAll: async (query = {}) => {
+    const pagination = getPaginationParams(query);
 
+    const [orders, total] = await Promise.all([
+      ordersRepository.findAll(pagination),
+      ordersRepository.countAll(),
+    ]);
+
+    return {
+      payload: orders,
+      pagination: buildPagination({
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+      }),
+    };
+  },
   getById: async (id) => {
     const order = await ordersRepository.findById(id);
     if (!order) throw notFound(id);

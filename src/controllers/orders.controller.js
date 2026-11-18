@@ -2,8 +2,12 @@ import { ordersService } from "../services/orders.service.js";
 
 export const getOrders = async (req, res, next) => {
   try {
-    const orders = await ordersService.getAll();
-    res.json({ status: "success", payload: orders });
+    const result = await ordersService.getAll(req.query);
+
+    res.json({
+      status: "success",
+      ...result,
+    });
   } catch (error) {
     next(error);
   }
