@@ -3,9 +3,30 @@ import { ORDER_STATUS, DELIVERY_PRIORITY } from "../constants/index.js";
 
 const orderItemSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
-    quantity: { type: Number, required: true },
-    price: { type: Number, required: true },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      minlength: 1,
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: {
+        validator: Number.isInteger,
+        message: "La cantidad debe ser un número entero",
+      },
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: {
+        validator: Number.isFinite,
+        message: "El precio debe ser un número finito",
+      },
+    },
   },
   { _id: false },
 );
@@ -35,9 +56,29 @@ const orderSchema = new mongoose.Schema(
       ref: "Store",
       required: true,
     },
-    items: { type: [orderItemSchema], required: true },
-    deliveryAddress: { type: String, required: true },
-    total: { type: Number, required: true },
+    items: {
+      type: [orderItemSchema],
+      required: true,
+      validate: {
+        validator: (items) => Array.isArray(items) && items.length > 0,
+        message: "El pedido debe tener al menos un producto",
+      },
+    },
+    deliveryAddress: {
+      type: String,
+      required: true,
+      trim: true,
+      minlength: 1,
+    },
+    total: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: {
+        validator: Number.isFinite,
+        message: "El total debe ser un número finito",
+      },
+    },
     status: {
       type: String,
       enum: Object.values(ORDER_STATUS),

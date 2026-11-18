@@ -1,0 +1,53 @@
+services:
+  mongodb:
+    image: mongo:8.0
+    container_name: shipnow-mongodb
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:27017:27017"
+
+    volumes:
+      - mongodb_data:/data/db
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mongosh --quiet --eval ''db.adminCommand("ping").ok'' | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: shipnow-api
+    restart: unless-stopped
+    init: true
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      PORT: "8080"
+      NODE_ENV: production
+      LOG_LEVEL: info
+      MONGODB_URI: mongodb://mongodb:27017/shipnow
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+    volumes:
+      - shipnow_uploads:/app/uploads
+      - shipnow_logs:/app/logs
+
+volumes:
+  mongodb_data:
+  shipnow_uploads:
+  shipnow_logs:

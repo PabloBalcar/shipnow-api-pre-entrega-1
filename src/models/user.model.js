@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { USER_ROLES, DOCUMENT_TYPES } from "../constants/index.js";
+import { hashPassword, isHashedPassword } from "../utils/password.js";
 
 const documentSchema = new mongoose.Schema(
   {
@@ -40,6 +41,13 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true, versionKey: false },
 );
+
+// Protege también las creaciones directas mediante UserModel.create().
+userSchema.pre("save", async function () {
+  if (this.isModified("password") && !isHashedPassword(this.password)) {
+    this.password = await hashPassword(this.password);
+  }
+});
 
 const UserModel = mongoose.models.User || mongoose.model("User", userSchema);
 

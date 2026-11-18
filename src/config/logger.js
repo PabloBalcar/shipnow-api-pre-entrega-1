@@ -1,5 +1,4 @@
 import winston from "winston";
-import DailyRotateFile from "winston-daily-rotate-file";
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "./env.config.js";
@@ -47,34 +46,45 @@ const fileFormat = winston.format.combine(
   winston.format.json(),
 );
 
-const logger = winston.createLogger({
-  levels: customLevels.levels,
-  level: config.logLevel,
-  defaultMeta: { service: "shipnow-api" },
-  transports: [
+// Cuando el nivel configurado es info, también se registran
+// las solicitudes HTTP para conservar la actividad general.
+const combinedLogLevel = config.logLevel === "info" ? "http" : config.logLevel;
+
+const transports = [
+  new winston.transports.File({
+    filename: path.join(logsDirectory, "combined.log"),
+    level: combinedLogLevel,
+    format: fileFormat,
+    maxsize: 5 * 1024 * 1024,
+    maxFiles: 5,
+    tailable: true,
+  }),
+
+  new winston.transports.File({
+    filename: path.join(logsDirectory, "error.log"),
+    level: "error",
+    format: fileFormat,
+    maxsize: 5 * 1024 * 1024,
+    maxFiles: 5,
+    tailable: true,
+  }),
+];
+
+// La consola se utiliza exclusivamente durante el desarrollo.
+if (config.nodeEnv === "development") {
+  transports.push(
     new winston.transports.Console({
       level: config.logLevel,
       format: consoleFormat,
     }),
+  );
+}
 
-    new DailyRotateFile({
-      filename: path.join(logsDirectory, "combined-%DATE%.log"),
-      datePattern: "YYYY-MM-DD",
-      maxFiles: "14d",
-      zippedArchive: true,
-      level: config.logLevel,
-      format: fileFormat,
-    }),
-
-    new DailyRotateFile({
-      filename: path.join(logsDirectory, "error-%DATE%.log"),
-      datePattern: "YYYY-MM-DD",
-      maxFiles: "14d",
-      zippedArchive: true,
-      level: "error",
-      format: fileFormat,
-    }),
-  ],
+const logger = winston.createLogger({
+  levels: customLevels.levels,
+  level: "debug",
+  defaultMeta: { service: "shipnow-api" },
+  transports,
 });
 
 export default logger;

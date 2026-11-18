@@ -46,14 +46,69 @@ export const generateMockDelivery = ({
   order,
   courier = null,
   status = DELIVERY_STATUS.PENDING,
-} = {}) => ({
-  _id: faker.database.mongodbObjectId(),
-  order,
-  courier,
-  status,
-  deliveredAt:
-    status === DELIVERY_STATUS.DELIVERED ? faker.date.recent() : null,
-});
+} = {}) => {
+  const statusHistory = {
+    [DELIVERY_STATUS.PENDING]: [DELIVERY_STATUS.PENDING],
+
+    [DELIVERY_STATUS.ASSIGNED]: [
+      DELIVERY_STATUS.PENDING,
+      DELIVERY_STATUS.ASSIGNED,
+    ],
+
+    [DELIVERY_STATUS.PICKED_UP]: [
+      DELIVERY_STATUS.PENDING,
+      DELIVERY_STATUS.ASSIGNED,
+      DELIVERY_STATUS.PICKED_UP,
+    ],
+
+    [DELIVERY_STATUS.IN_TRANSIT]: [
+      DELIVERY_STATUS.PENDING,
+      DELIVERY_STATUS.ASSIGNED,
+      DELIVERY_STATUS.PICKED_UP,
+      DELIVERY_STATUS.IN_TRANSIT,
+    ],
+
+    [DELIVERY_STATUS.DELIVERED]: [
+      DELIVERY_STATUS.PENDING,
+      DELIVERY_STATUS.ASSIGNED,
+      DELIVERY_STATUS.PICKED_UP,
+      DELIVERY_STATUS.IN_TRANSIT,
+      DELIVERY_STATUS.DELIVERED,
+    ],
+
+    [DELIVERY_STATUS.CANCELLED]: [
+      DELIVERY_STATUS.PENDING,
+      DELIVERY_STATUS.ASSIGNED,
+      DELIVERY_STATUS.CANCELLED,
+    ],
+  };
+
+  const historyStatuses = statusHistory[status];
+
+  if (!historyStatuses) {
+    throw new Error(`Estado de entrega no válido: ${status}`);
+  }
+
+  const now = Date.now();
+
+  const history = historyStatuses.map((historyStatus, index) => ({
+    status: historyStatus,
+    note: `Estado generado automáticamente: ${historyStatus}`,
+    changedAt: new Date(now - (historyStatuses.length - index) * 60000),
+  }));
+
+  return {
+    _id: faker.database.mongodbObjectId(),
+    order,
+    courier,
+    status,
+    deliveredAt:
+      status === DELIVERY_STATUS.DELIVERED
+        ? history[history.length - 1].changedAt
+        : null,
+    history,
+  };
+};
 
 export const generateMockStore = ({ owner } = {}) => ({
   _id: faker.database.mongodbObjectId(),

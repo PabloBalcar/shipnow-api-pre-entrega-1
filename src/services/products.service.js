@@ -3,12 +3,14 @@ import { storesRepository } from "../repositories/stores.repository.js";
 import { PRODUCT_STATUS } from "../constants/index.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
+import { validateAllowedFields } from "../utils/validate-allowed-fields.js";
 import { getPaginationParams, buildPagination } from "../utils/pagination.js";
 
 const notFound = () => new AppError(ERRORS.PRODUCT_NOT_FOUND);
 const storeNotFound = () => new AppError(ERRORS.STORE_NOT_FOUND);
 
-// Regla de negocio: el estado depende del stock.
+const PRODUCT_FIELDS = ["name", "description", "price", "stock", "store"];
+
 const getStatusByStock = (stock) =>
   stock > 0 ? PRODUCT_STATUS.AVAILABLE : PRODUCT_STATUS.OUT_OF_STOCK;
 
@@ -21,8 +23,6 @@ const validateStock = (stock) => {
 export const productsService = {
   getStatusByStock,
 
-  // Por defecto solo se listan productos con stock.
-  // Con ?includeOutOfStock=true se listan todos.
   getAll: async (query = {}) => {
     const { includeOutOfStock, store } = query;
     const pagination = getPaginationParams(query);
@@ -59,6 +59,8 @@ export const productsService = {
   },
 
   create: async (productData) => {
+    validateAllowedFields(productData, PRODUCT_FIELDS);
+
     const { name, description, price, stock, store } = productData;
 
     if (!name || price === undefined || !store) {
@@ -84,23 +86,27 @@ export const productsService = {
   },
 
   update: async (id, productData) => {
-    const { status, ...dataToUpdate } = productData;
+    validateAllowedFields(productData, PRODUCT_FIELDS);
 
-    validateStock(dataToUpdate.stock);
+    validateStock(productData.stock);
 
     if (
-      dataToUpdate.store &&
-      !(await storesRepository.exists(dataToUpdate.store))
+      productData.store &&
+      !(await storesRepository.exists(productData.store))
     ) {
       throw storeNotFound();
     }
+
+    const dataToUpdate = { ...productData };
 
     if (dataToUpdate.stock !== undefined) {
       dataToUpdate.status = getStatusByStock(dataToUpdate.stock);
     }
 
     const product = await productsRepository.updateById(id, dataToUpdate);
+
     if (!product) throw notFound();
+
     return product;
   },
 

@@ -47,13 +47,8 @@ describe("Productos", function () {
   });
 
   after(async function () {
-    if (availableProduct || outOfStockProduct) {
-      await ProductModel.deleteMany({
-        store: testStore._id,
-      });
-    }
-
     if (testStore) {
+      await ProductModel.deleteMany({ store: testStore._id });
       await StoreModel.deleteOne({ _id: testStore._id });
     }
 
@@ -144,6 +139,55 @@ describe("Productos", function () {
       expect(response.status).to.equal(400);
       expect(response.body.status).to.equal("error");
       expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+  });
+
+  describe("POST /api/products", function () {
+    it("debe rechazar el status enviado por el cliente", async function () {
+      const response = await request(app).post("/api/products").send({
+        name: "Producto inválido",
+        description: "Prueba de validación",
+        price: 1000,
+        stock: 10,
+        store: testStore._id.toString(),
+        status: PRODUCT_STATUS.OUT_OF_STOCK,
+      });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+
+    it("debe calcular el estado del producto según su stock", async function () {
+      const response = await request(app).post("/api/products").send({
+        name: "Producto creado por test",
+        description: "Prueba de estado automático",
+        price: 1500,
+        stock: 0,
+        store: testStore._id.toString(),
+      });
+
+      expect(response.status).to.equal(201);
+      expect(response.body.status).to.equal("success");
+      expect(response.body.payload.status).to.equal(
+        PRODUCT_STATUS.OUT_OF_STOCK,
+      );
+
+      await ProductModel.deleteOne({ _id: response.body.payload._id });
+    });
+  });
+
+  describe("PUT /api/products/:pid", function () {
+    it("debe calcular el estado cuando cambia el stock", async function () {
+      const response = await request(app)
+        .put(`/api/products/${availableProduct._id}`)
+        .send({ stock: 0 });
+
+      expect(response.status).to.equal(200);
+      expect(response.body.status).to.equal("success");
+      expect(response.body.payload.stock).to.equal(0);
+      expect(response.body.payload.status).to.equal(
+        PRODUCT_STATUS.OUT_OF_STOCK,
+      );
     });
   });
 });

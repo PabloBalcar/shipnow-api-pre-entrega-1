@@ -17,8 +17,29 @@ const notFound = (id) => {
   return new AppError(ERRORS.ORDER_NOT_FOUND);
 };
 
+const validateOrderItems = (items) => {
+  const validItems =
+    Array.isArray(items) &&
+    items.length > 0 &&
+    items.every(
+      (item) =>
+        item &&
+        typeof item.name === "string" &&
+        item.name.trim().length > 0 &&
+        Number.isInteger(item.quantity) &&
+        item.quantity >= 1 &&
+        typeof item.price === "number" &&
+        Number.isFinite(item.price) &&
+        item.price >= 0,
+    );
+
+  if (!validItems) {
+    throw new AppError(ERRORS.INVALID_ORDER_ITEMS);
+  }
+};
+
 export const ordersService = {
-  // Regla de negocio pura (sin base de datos): fácil de testear.
+  // Regla de negocio pura: calcula el total a partir de los ítems validados.
   calculateTotal: (items) =>
     items.reduce(
       (accumulator, item) => accumulator + item.price * item.quantity,
@@ -42,6 +63,7 @@ export const ordersService = {
       }),
     };
   },
+
   getById: async (id) => {
     const order = await ordersRepository.findById(id);
     if (!order) throw notFound(id);
@@ -51,12 +73,28 @@ export const ordersService = {
   create: async (orderData) => {
     const { customer, store, items, deliveryAddress, priority } = orderData;
 
-    if (!customer || !store || !items || !deliveryAddress) {
+    if (!customer || !store || !Array.isArray(items) || !deliveryAddress) {
       throw new AppError(ERRORS.ORDER_REQUIRED_FIELDS);
     }
 
-    if (!Array.isArray(items) || items.length === 0) {
+    if (items.length === 0) {
       throw new AppError(ERRORS.ORDER_ITEMS_REQUIRED);
+    }
+
+    validateOrderItems(items);
+
+    if (
+      priority !== undefined &&
+      !Object.values(DELIVERY_PRIORITY).includes(priority)
+    ) {
+      throw new AppError(ERRORS.INVALID_ORDER_PRIORITY);
+    }
+
+    if (
+      typeof deliveryAddress !== "string" ||
+      deliveryAddress.trim().length === 0
+    ) {
+      throw new AppError(ERRORS.ORDER_REQUIRED_FIELDS);
     }
 
     if (!(await usersRepository.exists(customer))) {
@@ -70,8 +108,12 @@ export const ordersService = {
     const order = await ordersRepository.create({
       customer,
       store,
-      items,
-      deliveryAddress,
+      items: items.map((item) => ({
+        name: item.name.trim(),
+        quantity: item.quantity,
+        price: item.price,
+      })),
+      deliveryAddress: deliveryAddress.trim(),
       priority: priority ?? DELIVERY_PRIORITY.NORMAL,
       total: ordersService.calculateTotal(items),
       status: ORDER_STATUS.CREATED,
@@ -105,7 +147,7 @@ export const ordersService = {
     return order;
   },
 
-  // Asociar un comprobante al pedido y guardar sus metadatos.
+  // Asocia un comprobante al pedido y guarda sus metadatos.
   addProof: async (id, file) => {
     if (!file) {
       throw new AppError(ERRORS.FILE_REQUIRED);

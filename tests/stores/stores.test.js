@@ -74,4 +74,29 @@ describe("Comercios", function () {
       expect(response.body.error).to.equal("VALIDATION_ERROR");
     });
   });
+
+  describe("POST /api/stores", function () {
+    it("debe rechazar campos que no están permitidos", async function () {
+      const response = await request(app).post("/api/stores").send({
+        name: "Comercio inválido",
+        address: "Paraná",
+        owner: testUser._id.toString(),
+        isActive: false,
+      });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+  });
+
+  describe("PUT /api/stores/:sid", function () {
+    it("debe rechazar modificaciones del campo isActive", async function () {
+      const response = await request(app)
+        .put(`/api/stores/${testStore._id}`)
+        .send({ isActive: false });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+  });
 });

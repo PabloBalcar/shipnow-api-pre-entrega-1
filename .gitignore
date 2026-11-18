@@ -1,9 +1,15 @@
+
 node_modules
+
 .env
-.env.test
+.env.*
+!.env.example
+
 logs
 *.log
+errors.log
+
 uploads
 coverage
+
 npm-debug.log
-errors.log
