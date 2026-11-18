@@ -1,9 +1,13 @@
 import { storesRepository } from "../repositories/stores.repository.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
+import { validateAllowedFields } from "../utils/validate-allowed-fields.js";
 import { getPaginationParams, buildPagination } from "../utils/pagination.js";
 
 const notFound = () => new AppError(ERRORS.STORE_NOT_FOUND);
+
+const CREATE_FIELDS = ["name", "address", "owner"];
+const UPDATE_FIELDS = ["name", "address"];
 
 export const storesService = {
   getAll: async (query = {}) => {
@@ -30,11 +34,18 @@ export const storesService = {
     return store;
   },
 
-  create: (storeData) => storesRepository.create(storeData),
+  create: async (storeData) => {
+    validateAllowedFields(storeData, CREATE_FIELDS);
+    return storesRepository.create(storeData);
+  },
 
   update: async (id, storeData) => {
+    validateAllowedFields(storeData, UPDATE_FIELDS);
+
     const store = await storesRepository.updateById(id, storeData);
+
     if (!store) throw notFound();
+
     return store;
   },
 

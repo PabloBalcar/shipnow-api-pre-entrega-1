@@ -1,8 +1,8 @@
 # ShipNow API
 
-API REST de logística y envíos construida con Node.js, Express y MongoDB (Mongoose), organizada mediante una **arquitectura por capas** (Router → Controller → Service → Repository).
+API REST de logística y envíos construida con **Node.js, Express y MongoDB (Mongoose)**, organizada mediante una arquitectura por capas (**Router → Controller → Service → Repository**).
 
-El proyecto incorpora manejo centralizado de errores, logging profesional, documentación con Swagger, testing automatizado, carga de archivos y configuración para ejecución mediante Docker.
+El proyecto incorpora manejo centralizado de errores, logging con Winston, documentación mediante Swagger (OpenAPI 3.0), testing automatizado, carga y validación de archivos, configuración para distintos entornos y despliegue mediante Docker y Docker Compose.
 
 ---
 
@@ -16,7 +16,15 @@ Clonar el repositorio e instalar las dependencias:
 npm install
 ```
 
-### 2. Configurar las variables de entorno
+### 2. Iniciar MongoDB
+
+Antes de iniciar la API, es necesario contar con una instancia de MongoDB en funcionamiento.
+
+Puede utilizarse una instalación local de MongoDB o una instancia de MongoDB Atlas.
+
+Si se utiliza una instancia local, verificar que el servicio esté iniciado y disponible en el puerto `27017`.
+
+### 3. Configurar las variables de entorno
 
 Crear el archivo `.env` a partir de `.env.example`:
 
@@ -24,18 +32,22 @@ Crear el archivo `.env` a partir de `.env.example`:
 cp .env.example .env
 ```
 
-Configurar las siguientes variables:
+Configurar las variables necesarias:
 
 ```env
 PORT=8080
 NODE_ENV=development
 LOG_LEVEL=debug
 MONGODB_URI=mongodb://127.0.0.1:27017/shipnow
+
+### Variables opcionales
+MONGODB_DNS_SERVER=
+CORS_ORIGINS=
 ```
 
 Las variables `PORT`, `NODE_ENV` y `MONGODB_URI` son obligatorias.
 
-La variable `LOG_LEVEL` es opcional y permite configurar el nivel mínimo de logging.
+`LOG_LEVEL` es opcional y permite configurar el nivel mínimo de logging.
 
 Valores permitidos:
 
@@ -54,28 +66,34 @@ Si no se especifica, se utiliza `debug` en desarrollo y testing, e `info` en pro
 - `test`
 - `production`
 
+`MONGODB_DNS_SERVER` es opcional y permite configurar un servidor DNS específico para la resolución de direcciones de MongoDB.
+
+`CORS_ORIGINS` es opcional y permite definir los orígenes autorizados para las solicitudes CORS. Cuando se configura, los orígenes se especifican separados por comas. En producción deben definirse los orígenes que estarán autorizados.
+
 Si falta alguna variable obligatoria o su valor es inválido, la aplicación no inicia y muestra un error descriptivo.
 
-### 3. Levantar el servidor
+### 4. Levantar el servidor
 
-En modo desarrollo:
-
-```bash
-npm run dev
-```
-
-En modo normal:
+Ejecutar:
 
 ```bash
 npm start
 ```
 
-### 4. Verificar el funcionamiento
+El servidor inicia utilizando el puerto configurado en `PORT`. En el archivo `.env.example` se proporciona `8080` como valor de configuración recomendado.
+
+### 5. Verificar el funcionamiento
 
 Realizar una petición al endpoint de health check:
 
 ```http
 GET http://localhost:8080/health
+```
+
+También está disponible:
+
+```http
+GET http://localhost:8080/api/health
 ```
 
 Respuesta esperada:
@@ -115,23 +133,32 @@ src/
 │   └── ...
 ├── middlewares/
 │   ├── error.middleware.js
+│   ├── upload.middleware.js
+│   ├── file-signature.middleware.js
 │   └── ...
 ├── models/
 │   ├── delivery.model.js
 │   └── ...
 ├── repositories/
 │   ├── mocks.repository.js
+│   ├── deliveries.repository.js
 │   └── ...
 ├── routes/
 │   ├── mocks.router.js
-│   ├── logger.router.js
+│   ├── deliveries.router.js
 │   └── ...
 ├── services/
 │   ├── mocks.service.js
+│   ├── deliveries.service.js
 │   └── ...
 ├── utils/
 │   ├── app-error.js
-│   └── mock-generator.js
+│   ├── mock-generator.js
+│   └── ...
+├── docs/
+│   ├── swagger.config.js
+│   ├── schemas.yaml
+│   └── ...
 ├── app.js
 └── server.js
 ```
@@ -160,7 +187,7 @@ Se encarga del acceso a los datos mediante los modelos de Mongoose. Encapsula la
 
 **Middleware**
 
-Centraliza el tratamiento de errores y transforma las excepciones recibidas en respuestas HTTP con un formato uniforme.
+Centraliza el tratamiento de errores y permite procesar aspectos transversales de las solicitudes, como la carga y validación de archivos.
 
 ### ¿Por qué separar Service y Repository?
 
@@ -197,6 +224,8 @@ COURIER
 - `USER`: usuario o cliente.
 - `COURIER`: repartidor.
 
+El registro público de usuarios asigna automáticamente el rol `USER`. El rol no se recibe como un campo modificable desde la operación de creación.
+
 ### Estados de pedidos
 
 ```text
@@ -208,7 +237,7 @@ delivered
 cancelled
 ```
 
-### Prioridades de entrega
+### Prioridades de pedidos
 
 ```text
 low
@@ -221,6 +250,7 @@ high
 ```text
 pending
 assigned
+picked_up
 in_transit
 delivered
 cancelled
@@ -239,7 +269,7 @@ out_of_stock
 
 ShipNow API trabaja con usuarios, comercios, productos, pedidos y entregas.
 
-Un usuario representa a un cliente, un comercio es el lugar desde donde sale el pedido, y un pedido es una solicitud de envío asociada a un usuario y a un comercio.
+Un usuario representa a un cliente, un comercio es el lugar desde donde sale el pedido, y un pedido es una solicitud asociada a un usuario y a un comercio.
 
 Las entregas se relacionan con los pedidos y pueden tener asignado un repartidor con rol `COURIER`.
 
@@ -247,10 +277,11 @@ Las entregas se relacionan con los pedidos y pueden tener asignado un repartidor
 
 1. Crear un usuario.
 2. Crear un comercio.
-3. Crear un pedido utilizando el ID del usuario y del comercio.
-4. Consultar los pedidos.
-5. Crear y gestionar entregas asociadas a pedidos.
-6. Actualizar los estados correspondientes.
+3. Crear un producto asociado al comercio.
+4. Crear un pedido utilizando el ID del usuario y del comercio.
+5. Crear una entrega asociada al pedido.
+6. Asignar un repartidor.
+7. Actualizar los estados de la entrega y del pedido.
 
 ---
 
@@ -265,14 +296,15 @@ Representa a los usuarios del sistema.
   "firstName": "Martina",
   "lastName": "Gómez",
   "email": "martina@test.com",
-  "password": "123456",
-  "role": "USER"
+  "password": "Password123"
 }
 ```
 
 Roles disponibles: `ADMIN`, `USER` y `COURIER`.
 
-El rol predeterminado es `USER`.
+El rol predeterminado para los usuarios creados mediante el registro es `USER`.
+
+La contraseña se almacena utilizando un mecanismo de hash y no se devuelve en las respuestas de la API.
 
 ### Endpoints
 
@@ -283,6 +315,27 @@ POST   /api/users
 PUT    /api/users/:uid
 DELETE /api/users/:uid
 ```
+
+### Cargar documentos de usuario
+
+```http
+POST /api/users/:uid/documents
+```
+
+La solicitud utiliza `multipart/form-data` y admite los siguientes campos:
+
+- `document`: archivo que se desea cargar.
+- `type`: tipo de documento.
+
+Tipos de documentos permitidos:
+
+```text
+user_document
+driver_license
+administrative_document
+```
+
+Los archivos admitidos son PDF, JPEG, PNG y WebP, con un tamaño máximo de 5 MB.
 
 ---
 
@@ -296,15 +349,21 @@ Los estados disponibles son `available` y `out_of_stock`, determinados automáti
 
 ```http
 GET    /api/products
-GET    /api/products?includeOutOfStock=true
-GET    /api/products?store=ID_DEL_COMERCIO
 GET    /api/products/:pid
 POST   /api/products
 PUT    /api/products/:pid
 DELETE /api/products/:pid
 ```
 
-Por defecto, el listado muestra solamente productos con stock disponible. El parámetro `includeOutOfStock=true` permite incluir todos los productos.
+El listado admite los siguientes parámetros de consulta:
+
+```http
+GET /api/products?page=1&limit=10
+GET /api/products?includeOutOfStock=true
+GET /api/products?store=ID_DEL_COMERCIO
+```
+
+Por defecto, muestra solamente productos con stock disponible. El parámetro `includeOutOfStock=true` permite incluir los productos sin stock.
 
 ### Crear producto
 
@@ -324,6 +383,11 @@ Body de ejemplo:
 }
 ```
 
+El estado se calcula automáticamente:
+
+- Si el stock es mayor que cero, el producto queda como `available`.
+- Si el stock es cero, el producto queda como `out_of_stock`.
+
 ---
 
 ## Stores
@@ -339,6 +403,8 @@ POST   /api/stores
 PUT    /api/stores/:sid
 DELETE /api/stores/:sid
 ```
+
+El listado admite paginación mediante `page` y `limit`.
 
 ### Crear comercio
 
@@ -356,6 +422,8 @@ Body de ejemplo:
 }
 ```
 
+Para actualizar un comercio se admiten los campos `name` y `address`. El propietario y el estado del comercio no forman parte de los campos modificables mediante esta operación.
+
 ---
 
 ## Orders
@@ -368,9 +436,12 @@ Representa los pedidos o envíos realizados por los usuarios.
 GET    /api/orders
 GET    /api/orders/:oid
 POST   /api/orders
+POST   /api/orders/:oid/proof
 PUT    /api/orders/:oid/status
 DELETE /api/orders/:oid
 ```
+
+El listado admite paginación.
 
 ### Crear pedido
 
@@ -425,6 +496,29 @@ Body de ejemplo:
 }
 ```
 
+Los estados permitidos son:
+
+```text
+created
+assigned
+picked_up
+in_transit
+delivered
+cancelled
+```
+
+### Cargar comprobante
+
+```http
+POST /api/orders/:oid/proof
+```
+
+La solicitud utiliza `multipart/form-data` con el campo `proof`.
+
+Se admiten archivos PDF, JPEG, PNG y WebP de hasta 5 MB.
+
+Los metadatos del archivo se almacenan asociados al pedido.
+
 ---
 
 ## Deliveries
@@ -433,22 +527,104 @@ Representa las entregas asociadas a los pedidos.
 
 Cada entrega tiene una referencia a un pedido y puede tener asignado un repartidor (`courier`) con rol `COURIER`.
 
+El módulo cuenta con Repository, Service, Controller y Router propios, y permite gestionar las entregas, cargar comprobantes y consultar su seguimiento.
+
+### Endpoints
+
+```http
+GET  /api/deliveries
+GET  /api/deliveries/:did
+POST /api/deliveries
+GET  /api/deliveries/:did/tracking
+PUT  /api/deliveries/:did/assign
+PUT  /api/deliveries/:did/status
+POST /api/deliveries/:did/proof
+```
+
 ### Campos principales
 
 - `order`: referencia al pedido asociado.
 - `courier`: referencia al repartidor asignado. Puede ser `null`.
-- `status`: estado de la entrega.
+- `status`: estado actual de la entrega.
 - `deliveredAt`: fecha de entrega, cuando corresponde.
+- `proof`: metadatos del comprobante de entrega, cuando existe.
+- `history`: historial de cambios de estado, con fecha y nota opcional.
 
 ### Estados disponibles
 
 ```text
 pending
 assigned
+picked_up
 in_transit
 delivered
 cancelled
 ```
+
+### Crear una entrega
+
+```http
+POST /api/deliveries
+```
+
+La entrega se crea asociada a un pedido que se encuentre en estado `created`.
+
+El estado inicial de la entrega es `pending`.
+
+### Asignar repartidor
+
+```http
+PUT /api/deliveries/:did/assign
+```
+
+La asignación requiere un usuario con rol `COURIER` y una entrega que se encuentre en estado `pending`.
+
+### Actualizar estado
+
+```http
+PUT /api/deliveries/:did/status
+```
+
+Body de ejemplo:
+
+```json
+{
+  "status": "picked_up",
+  "note": "El repartidor retiró el pedido"
+}
+```
+
+Las transiciones permitidas incluyen:
+
+```text
+assigned → picked_up
+picked_up → in_transit
+in_transit → delivered
+```
+
+También se contempla la cancelación de entregas cuando corresponde.
+
+Los cambios de estado se registran en el historial y se sincronizan con el estado del pedido asociado.
+
+### Consultar seguimiento
+
+```http
+GET /api/deliveries/:did/tracking
+```
+
+Permite consultar el estado actual, la fecha de entrega, los datos relacionados y el historial de seguimiento.
+
+### Cargar comprobante de entrega
+
+```http
+POST /api/deliveries/:did/proof
+```
+
+La solicitud utiliza `multipart/form-data` con el campo `proof`.
+
+Se admiten archivos PDF, JPEG, PNG y WebP de hasta 5 MB.
+
+El archivo se valida antes de procesarse y sus metadatos se almacenan asociados a la entrega.
 
 ---
 
@@ -487,24 +663,6 @@ Ejemplo:
 GET http://localhost:8080/api/mocks/users?qty=2
 ```
 
-Respuesta de ejemplo:
-
-```json
-{
-  "status": "success",
-  "payload": [
-    {
-      "_id": "ID_GENERADO",
-      "firstName": "Martina",
-      "lastName": "Gómez",
-      "email": "martina@example.com",
-      "role": "USER",
-      "documents": []
-    }
-  ]
-}
-```
-
 Las contraseñas no se incluyen en las respuestas de generación de usuarios y repartidores.
 
 Los pedidos y las entregas generados incluyen referencias a las entidades relacionadas.
@@ -527,38 +685,9 @@ Este endpoint genera e inserta:
 
 Las referencias se generan antes de realizar las inserciones, permitiendo mantener la relación entre los documentos.
 
-Respuesta esperada:
-
-```json
-{
-  "status": "success",
-  "payload": {
-    "insertados": {
-      "usuarios": 2,
-      "repartidores": 2,
-      "comercios": 2,
-      "pedidos": 2,
-      "entregas": 2
-    }
-  }
-}
-```
-
-El endpoint devuelve HTTP `201` cuando la inserción se realiza correctamente.
-
 **Importante:** cada ejecución del seed genera nuevos registros. No elimina los datos existentes. Las inserciones se realizan secuencialmente y no utilizan transacciones; si una operación intermedia falla, las inserciones anteriores podrían permanecer guardadas.
 
-### Probar los endpoints con Thunder Client
-
-Con el servidor ejecutándose en el puerto `8080`, se pueden probar las siguientes solicitudes:
-
-| Método | Endpoint                      | Función                               |
-| ------ | ----------------------------- | ------------------------------------- |
-| GET    | `/api/mocks/users?qty=2`      | Genera usuarios ficticios             |
-| GET    | `/api/mocks/couriers?qty=2`   | Genera repartidores ficticios         |
-| GET    | `/api/mocks/orders?qty=2`     | Genera pedidos ficticios              |
-| GET    | `/api/mocks/deliveries?qty=2` | Genera entregas ficticias             |
-| POST   | `/api/mocks/seed?qty=2`       | Inserta datos relacionados en MongoDB |
+Los endpoints de mocking y seed se habilitan únicamente fuera del entorno de producción.
 
 ---
 
@@ -593,7 +722,7 @@ Error Middleware
 Respuesta HTTP uniforme
 ```
 
-Los errores de negocio se detectan principalmente en los Services. Los Controllers capturan las excepciones y las derivan mediante `next(error)`, sin construir respuestas de error por separado.
+Los errores de negocio se detectan principalmente en los Services. Los Controllers derivan las excepciones mediante `next(error)`, sin construir respuestas de error por separado.
 
 ### Formato de respuesta
 
@@ -623,22 +752,24 @@ El campo `details` es opcional y se utiliza cuando es necesario proporcionar inf
 
 Algunos de los errores definidos en el diccionario `ERRORS` son:
 
-| Código interno          | HTTP | Descripción                                  |
-| ----------------------- | ---: | -------------------------------------------- |
-| `USER_NOT_FOUND`        |  404 | Usuario no encontrado                        |
-| `STORE_NOT_FOUND`       |  404 | Comercio no encontrado                       |
-| `PRODUCT_NOT_FOUND`     |  404 | Producto no encontrado                       |
-| `ORDER_NOT_FOUND`       |  404 | Pedido no encontrado                         |
-| `INVALID_MOCK_AMOUNT`   |  400 | Cantidad de mocks inválida                   |
-| `INVALID_ORDER_STATUS`  |  400 | Estado de pedido inválido                    |
-| `INVALID_PRODUCT_STOCK` |  400 | Stock de producto inválido                   |
-| `INVALID_ID`            |  400 | Identificador con formato incorrecto         |
-| `VALIDATION_ERROR`      |  400 | Error de validación de Mongoose              |
-| `DUPLICATE_RESOURCE`    |  409 | Registro duplicado                           |
-| `DATABASE_ERROR`        |  500 | Error de interacción con MongoDB             |
-| `MOCK_GENERATION_ERROR` |  500 | Error durante la generación o carga de mocks |
-| `ROUTE_NOT_FOUND`       |  404 | Ruta inexistente                             |
-| `INTERNAL_SERVER_ERROR` |  500 | Error interno no identificado                |
+| Código interno            | HTTP | Descripción                                  |
+| ------------------------- | ---: | -------------------------------------------- |
+| `USER_NOT_FOUND`          |  404 | Usuario no encontrado                        |
+| `STORE_NOT_FOUND`         |  404 | Comercio no encontrado                       |
+| `PRODUCT_NOT_FOUND`       |  404 | Producto no encontrado                       |
+| `ORDER_NOT_FOUND`         |  404 | Pedido no encontrado                         |
+| `DELIVERY_NOT_FOUND`      |  404 | Entrega no encontrada                        |
+| `INVALID_MOCK_AMOUNT`     |  400 | Cantidad de mocks inválida                   |
+| `INVALID_ORDER_STATUS`    |  400 | Estado de pedido inválido                    |
+| `INVALID_DELIVERY_STATUS` |  400 | Estado de entrega inválido                   |
+| `INVALID_PRODUCT_STOCK`   |  400 | Stock de producto inválido                   |
+| `INVALID_ID`              |  400 | Identificador con formato incorrecto         |
+| `VALIDATION_ERROR`        |  400 | Error de validación                          |
+| `DUPLICATE_RESOURCE`      |  409 | Registro duplicado                           |
+| `DATABASE_ERROR`          |  500 | Error de interacción con MongoDB             |
+| `MOCK_GENERATION_ERROR`   |  500 | Error durante la generación o carga de mocks |
+| `ROUTE_NOT_FOUND`         |  404 | Ruta inexistente                             |
+| `INTERNAL_SERVER_ERROR`   |  500 | Error interno no identificado                |
 
 ### Errores de Mongoose
 
@@ -648,86 +779,11 @@ El middleware también contempla errores generados por Mongoose y MongoDB:
 - `CastError`: identificadores o valores con formato incorrecto.
 - Código `11000`: conflictos por valores duplicados.
 - Errores de conexión o comunicación con MongoDB/Mongoose.
+- Errores de carga de archivos generados por Multer.
 
 En los errores de validación se pueden incluir detalles sobre los campos que no cumplen las reglas establecidas.
 
 En producción, los errores internos con estado HTTP 500 se reemplazan por un mensaje genérico para evitar exponer información técnica.
-
-### Probar el manejo de errores
-
-Se pueden reproducir distintos casos utilizando Thunder Client.
-
-**1. Cantidad igual a cero**
-
-```http
-GET http://localhost:8080/api/mocks/users?qty=0
-```
-
-Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
-
-**2. Cantidad negativa**
-
-```http
-GET http://localhost:8080/api/mocks/users?qty=-3
-```
-
-Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
-
-**3. Cantidad no numérica**
-
-```http
-GET http://localhost:8080/api/mocks/users?qty=abc
-```
-
-Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
-
-**4. Cantidad superior al máximo permitido**
-
-```http
-GET http://localhost:8080/api/mocks/users?qty=101
-```
-
-Resultado esperado: HTTP `400`, código `INVALID_MOCK_AMOUNT`.
-
-**5. Cantidad válida**
-
-```http
-GET http://localhost:8080/api/mocks/users?qty=3
-```
-
-Resultado esperado: HTTP `200`, con tres usuarios generados y sin contraseñas expuestas.
-
-**6. Seed de datos de prueba**
-
-```http
-POST http://localhost:8080/api/mocks/seed?qty=2
-```
-
-Resultado esperado: HTTP `201`, con dos registros insertados por cada colección.
-
-**7. Ruta inexistente**
-
-```http
-GET http://localhost:8080/api/ruta-inexistente
-```
-
-Resultado esperado: HTTP `404`, código `ROUTE_NOT_FOUND`.
-
-**8. Identificador inválido**
-
-```http
-GET http://localhost:8080/api/users/123
-```
-
-Resultado esperado: HTTP `400`, código `INVALID_ID`.
-
-**9. Usuario inexistente**
-
-```http
-GET http://localhost:8080/api/users/507f1f77bcf86cd799439011
-```
-
-Resultado esperado: HTTP `404`, código `USER_NOT_FOUND`.
 
 ---
 
@@ -739,19 +795,18 @@ La configuración se centraliza en `src/config/logger.js`, permitiendo utilizar 
 
 ### Dependencias utilizadas
 
-- `winston`: gestión y clasificación de registros.
-- `winston-daily-rotate-file`: almacenamiento y rotación automática de archivos de log.
+- `winston`: gestión de niveles, registro de eventos y almacenamiento en archivos.
 
 ### Niveles personalizados
 
-Se definen seis niveles de logging, ordenados de menor a mayor gravedad:
+Se definen seis niveles de logging:
 
 | Nivel     | Descripción                                                        |
 | --------- | ------------------------------------------------------------------ |
 | `debug`   | Información detallada para depuración.                             |
 | `http`    | Registro de solicitudes HTTP.                                      |
 | `info`    | Eventos importantes del funcionamiento normal.                     |
-| `warning` | Situaciones anormales o errores controlados.                       |
+| `warning` | Situaciones anormales o advertencias.                              |
 | `error`   | Errores inesperados de la aplicación.                              |
 | `fatal`   | Fallas críticas que pueden impedir el funcionamiento del servidor. |
 
@@ -763,7 +818,7 @@ El nivel mínimo de registro depende de la configuración del entorno:
 - **Test:** utiliza `debug` por defecto.
 - **Production:** utiliza `info` por defecto.
 
-Los registros se muestran en consola y también se almacenan en archivos.
+Los registros se almacenan en archivos. La salida a consola está habilitada únicamente en desarrollo.
 
 ### Configuración mediante LOG_LEVEL
 
@@ -788,8 +843,8 @@ El logger está integrado en distintos componentes:
 - `config/db.js`: registra la conexión exitosa o fallida con MongoDB.
 - `app.js`: registra solicitudes HTTP, incluyendo método, ruta, código de estado y duración.
 - `middlewares/error.middleware.js`: registra errores controlados y errores inesperados.
-- `services/mocks.service.js`: registra la generación y carga de datos ficticios, además de las cantidades inválidas.
-- `services/orders.service.js`: registra la creación de pedidos y los pedidos inexistentes.
+- `services/mocks.service.js`: registra la generación y carga de datos ficticios.
+- `services/orders.service.js`: registra operaciones importantes relacionadas con pedidos.
 
 Los registros evitan incluir contraseñas, credenciales y otros datos sensibles.
 
@@ -799,10 +854,10 @@ Los archivos se generan dentro de la carpeta `logs/`.
 
 Se utilizan dos tipos de archivos:
 
-- `combined-YYYY-MM-DD.log`: contiene los registros correspondientes al nivel mínimo configurado para el entorno.
-- `error-YYYY-MM-DD.log`: contiene exclusivamente los niveles `error` y `fatal`.
+- `combined.log`: contiene los registros generales, incluyendo solicitudes HTTP.
+- `error.log`: contiene exclusivamente los niveles `error` y `fatal`.
 
-La rotación se realiza diariamente mediante `winston-daily-rotate-file`, conservando los archivos durante 14 días. Los archivos antiguos se comprimen automáticamente.
+Los archivos tienen rotación automática por tamaño: al alcanzar 5 MB se generan archivos de respaldo, conservando hasta cinco archivos por transporte.
 
 La carpeta `logs/` y los archivos `*.log` están incluidos en `.gitignore`, por lo que no se versionan ni se suben al repositorio.
 
@@ -830,25 +885,15 @@ Respuesta esperada:
 }
 ```
 
-El endpoint genera un registro de cada nivel para verificar su comportamiento en consola y archivos.
+El endpoint genera un registro de cada nivel para verificar su comportamiento.
 
-**Importante:** este endpoint está habilitado únicamente fuera del entorno de producción y se utiliza exclusivamente para pruebas.
-
-### Ejemplo práctico de utilización de niveles
-
-En una operación como una transferencia de fondos:
-
-- `debug`: registrar información técnica para seguir el proceso de transferencia.
-- `warning`: advertir que una operación fue rechazada por fondos insuficientes.
-- `info`: registrar que una transferencia se completó correctamente.
-- `error`: registrar un fallo inesperado durante la operación.
-- `fatal`: registrar una falla crítica que impida continuar con el funcionamiento del sistema.
+**Importante:** este endpoint está habilitado únicamente fuera del entorno de producción.
 
 ---
 
 ## Documentación de la API con Swagger
 
-El proyecto incorpora Swagger para documentar los endpoints de la API mediante la especificación OpenAPI 3.0. La documentación permite consultar los recursos disponibles, sus métodos HTTP, parámetros, cuerpos de solicitud y respuestas posibles.
+El proyecto incorpora Swagger para documentar la API mediante la especificación OpenAPI 3.0.
 
 ### Acceder a Swagger UI
 
@@ -858,59 +903,52 @@ Con el servidor ejecutándose localmente, ingresar a:
 http://localhost:8080/api/docs
 ```
 
-Desde Swagger UI se pueden explorar los endpoints documentados y ejecutar solicitudes contra el servidor local.
+Desde Swagger UI se pueden explorar los endpoints documentados y ejecutar solicitudes contra el servidor.
+
+La especificación OpenAPI en formato JSON también está disponible en:
+
+```text
+http://localhost:8080/api/docs.json
+```
 
 ### Configuración
 
 La documentación se configura de manera independiente en los siguientes archivos:
 
-- `src/docs/swagger.config.js`: contiene la configuración de Swagger, la información general de la API, la versión OpenAPI y el servidor local.
+- `src/docs/swagger.config.js`: contiene la configuración de Swagger, la información general de la API, la versión OpenAPI y la configuración del servidor.
 - `src/docs/schemas.yaml`: define los esquemas reutilizables de datos y respuestas.
-- `src/docs/users.js`, `src/docs/products.js`, `src/docs/stores.js`, `src/docs/orders.js` y `src/docs/mocks.js`: contienen la documentación de los endpoints correspondientes.
-- `src/docs/logger.js`: documenta el endpoint de prueba del sistema de logging.
+- `src/docs/users.js`: documentación de usuarios.
+- `src/docs/products.js`: documentación de productos.
+- `src/docs/stores.js`: documentación de comercios.
+- `src/docs/orders.js`: documentación de pedidos.
+- `src/docs/deliveries.js`: documentación de entregas.
+- `src/docs/mocks.js`: documentación de mocking y seed.
+- `src/docs/logger.js`: documentación del endpoint de prueba del sistema de logging.
+- `src/docs/health.js`: documentación de los endpoints de health check.
 
-La integración utiliza las dependencias `swagger-jsdoc` y `swagger-ui-express`. La interfaz se monta desde `src/app.js` en la ruta `/api/docs`.
+La integración utiliza `swagger-jsdoc` y `swagger-ui-express`. La interfaz se monta desde `src/app.js` en la ruta `/api/docs`.
 
 ### Recursos documentados
 
-La documentación incluye los endpoints de:
+La documentación incluye:
 
 - Users.
 - Products.
 - Stores.
 - Orders.
+- Deliveries.
 - Mocks de usuarios, repartidores, pedidos y entregas.
 - Carga de datos de prueba mediante seed.
 - Prueba del sistema de logging.
+- Health check de la aplicación.
 
-Se documentan los métodos HTTP, parámetros de ruta y consulta, cuerpos de solicitud cuando corresponden, respuestas exitosas y errores posibles.
-
-### Esquemas reutilizables
-
-Se definen esquemas para representar las estructuras principales de la API:
-
-- `User` y `UserInput`.
-- `Order` y `OrderItem`.
-- `Delivery`.
-- `Store`.
-- `ErrorResponse`.
-- `SuccessResponse`.
-
-Esto permite reutilizar las definiciones en distintos endpoints y mantener una documentación consistente.
-
-### Pruebas de la documentación
-
-Se verificó el acceso a Swagger UI y se probaron endpoints documentados mediante las solicitudes correspondientes.
-
-El endpoint `/api/logger/test` está disponible únicamente fuera del entorno de producción y se utiliza como herramienta de validación del sistema de logging.
-
-**Importante:** la documentación incluye los endpoints de generación de entregas ficticias (`/api/mocks/deliveries`), pero el proyecto no cuenta con una ruta CRUD independiente `/api/deliveries`.
+Se documentan los métodos HTTP, parámetros de ruta y consulta, cuerpos de solicitud, esquemas reutilizables y respuestas posibles.
 
 ---
 
 ## Testing automatizado
 
-El proyecto incorpora pruebas funcionales automatizadas utilizando **Mocha**, **Chai** y **Supertest**.
+El proyecto incorpora pruebas automatizadas utilizando **Mocha, Chai y Supertest**.
 
 Estas herramientas permiten ejecutar solicitudes HTTP contra la aplicación, comprobar los códigos de respuesta y validar la estructura y el contenido de las respuestas sin necesidad de iniciar manualmente el servidor.
 
@@ -954,24 +992,26 @@ El comando utiliza Mocha y carga previamente `tests/setup.js`, que configura el 
 
 - Respuesta HTTP 404 para rutas inexistentes.
 - Validación de la estructura de error.
+- Verificación de endpoints de health check.
 
 **Usuarios**
 
 - Listado de usuarios.
 - Respuesta 404 cuando un usuario no existe.
-- Paginación y carga de archivos.
-
-**Pedidos**
-
-- Listado de pedidos.
 - Paginación.
-- Creación exitosa y cálculo automático del total.
-- Validación de datos obligatorios.
-- Consulta de pedidos por ID.
-- Respuesta 404 para pedidos inexistentes.
-- Actualización de estados.
-- Rechazo de estados inválidos.
-- Carga de archivos.
+- Creación de usuarios.
+- Asignación automática del rol `USER`.
+- Hash de contraseñas.
+- Rechazo de campos no permitidos.
+- Actualización de usuarios.
+- Carga de documentos.
+
+**Comercios**
+
+- Listado de comercios.
+- Paginación.
+- Creación y actualización.
+- Validación de campos permitidos.
 
 **Productos**
 
@@ -979,11 +1019,33 @@ El comando utiliza Mocha y carga previamente `tests/setup.js`, que configura el 
 - Paginación.
 - Filtrado por disponibilidad.
 - Filtrado por comercio.
+- Creación y actualización.
+- Validación de stock.
+- Cálculo automático del estado según el stock.
 
-**Comercios**
+**Pedidos**
 
-- Listado de comercios.
+- Listado de pedidos.
 - Paginación.
+- Creación y cálculo automático del total.
+- Validación de datos obligatorios.
+- Consulta de pedidos por ID.
+- Respuesta 404 para pedidos inexistentes.
+- Actualización de estados.
+- Rechazo de estados inválidos.
+- Carga de comprobantes.
+
+**Entregas**
+
+- Creación de entregas.
+- Validación de pedidos asociados.
+- Asignación de repartidores.
+- Validación de roles.
+- Transiciones de estados.
+- Sincronización con pedidos.
+- Consulta de seguimiento.
+- Validación de operaciones no permitidas.
+- Carga y validación de comprobantes de entrega.
 
 **Mocks**
 
@@ -999,7 +1061,7 @@ El comando utiliza Mocha y carga previamente `tests/setup.js`, que configura el 
 
 **Swagger**
 
-- Verificación de disponibilidad de la interfaz de documentación.
+- Verificación de disponibilidad de la documentación de la API.
 
 ### Datos de prueba y limpieza
 
@@ -1011,13 +1073,13 @@ La base `shipnow-test` debe mantenerse separada de la base utilizada durante el 
 
 ### Resultado de las pruebas
 
-La suite automatizada fue ejecutada correctamente:
+La última ejecución confirmada de la suite automatizada finalizó correctamente:
 
 ```text
-46 passing (6s)
+94 passing
 ```
 
-Este resultado confirma que los 46 casos de prueba finalizaron satisfactoriamente en la última ejecución verificada.
+Los 94 casos de prueba finalizaron satisfactoriamente, sin pruebas fallidas.
 
 ---
 
@@ -1025,14 +1087,15 @@ Este resultado confirma que los 46 casos de prueba finalizaron satisfactoriament
 
 El proyecto incorpora **Multer** para gestionar la recepción y el almacenamiento de archivos enviados mediante solicitudes HTTP.
 
-La configuración permite controlar los archivos recibidos y evitar cargas excesivas o de formatos no admitidos.
-
 ### Características principales
 
 - Límite de tamaño de archivo de 5 MB.
 - Validación de tipos MIME permitidos.
+- Validación de la firma del contenido de los archivos.
 - Almacenamiento de archivos dentro de la carpeta `uploads/`.
 - Separación de directorios para documentos y comprobantes.
+- Nombres de archivo únicos.
+- Almacenamiento de metadatos asociados a los recursos.
 - Manejo de errores durante la carga.
 
 Los directorios utilizados incluyen:
@@ -1043,6 +1106,18 @@ uploads/
 └── proofs/
 ```
 
+Los archivos admitidos son PDF, JPEG, PNG y WebP.
+
+Los metadatos almacenados incluyen:
+
+- Nombre original.
+- Nombre del archivo almacenado.
+- Ruta.
+- Tipo MIME.
+- Tamaño.
+- Tipo de documento, cuando corresponde.
+- Fecha de carga.
+
 La carpeta `uploads/` está excluida de Git mediante `.gitignore`, por lo que los archivos recibidos no se incorporan al repositorio.
 
 En Docker se utiliza un volumen persistente para conservar los archivos subidos aunque se elimine o se reemplace el contenedor.
@@ -1051,34 +1126,41 @@ En Docker se utiliza un volumen persistente para conservar los archivos subidos 
 
 ## Producción y Docker
 
-El proyecto incorpora configuraciones para ejecutar la API en distintos entornos y facilitar su despliegue mediante Docker.
+El proyecto incorpora configuraciones para ejecutar la API en distintos entornos y facilitar su despliegue mediante Docker y Docker Compose.
 
 ### Configuración de producción
 
 La aplicación utiliza variables de entorno para adaptar su comportamiento según el entorno de ejecución.
 
-| Variable      | Descripción                           |
-| ------------- | ------------------------------------- |
-| `PORT`        | Puerto en el que escucha el servidor. |
-| `MONGODB_URI` | URI de conexión a MongoDB.            |
-| `NODE_ENV`    | Entorno de ejecución.                 |
-| `LOG_LEVEL`   | Nivel mínimo de logging.              |
+| Variable             | Descripción                                  |
+| -------------------- | -------------------------------------------- |
+| `PORT`               | Puerto en el que escucha el servidor.        |
+| `MONGODB_URI`        | URI de conexión a MongoDB.                   |
+| `NODE_ENV`           | Entorno de ejecución.                        |
+| `LOG_LEVEL`          | Nivel mínimo de logging.                     |
+| `MONGODB_DNS_SERVER` | Servidor DNS opcional para resolver MongoDB. |
+| `CORS_ORIGINS`       | Orígenes permitidos para solicitudes CORS.   |
 
 Las variables obligatorias se validan al iniciar la aplicación.
 
-En producción se utiliza `info` como nivel de logging predeterminado. Los endpoints de prueba del logger no están disponibles en este entorno.
+En producción se utiliza `info` como nivel de logging predeterminado. Los endpoints de prueba del logger y los endpoints de mocking no están disponibles en este entorno.
+
+Para producción se recomienda configurar `CORS_ORIGINS` con los dominios autorizados para acceder a la API.
 
 ### Health check
 
-La API dispone del endpoint:
+La API dispone de los siguientes endpoints:
 
 ```http
 GET /health
+GET /api/health
 ```
 
-Informa el estado de la aplicación y de la conexión con MongoDB.
+Informan el estado de la aplicación y de la conexión con MongoDB.
 
-Devuelve HTTP `200` cuando la base de datos está conectada y HTTP `503` cuando no está disponible.
+Devuelven HTTP `200` cuando la base de datos está conectada y HTTP `503` cuando no está disponible.
+
+Docker Compose también configura un health check para MongoDB y establece que la API espere a que la base de datos esté saludable antes de iniciarse.
 
 ### Cierre ordenado del servidor
 
@@ -1093,7 +1175,7 @@ Durante el apagado:
 
 Esto permite evitar cierres abruptos y facilita la administración del contenedor.
 
-### Docker
+### Dockerfile
 
 El proyecto incluye:
 
@@ -1110,79 +1192,87 @@ Desde la raíz del proyecto:
 docker build -t shipnow-api .
 ```
 
-### Ejecutar el contenedor
+### Docker Compose
+
+El proyecto incluye `docker-compose.yml` para levantar la API y MongoDB como servicios independientes.
+
+La configuración contempla:
+
+- Servicio de MongoDB.
+- Servicio de la API.
+- Red interna entre contenedores.
+- Health check de MongoDB.
+- Espera de disponibilidad de la base de datos antes de iniciar la API.
+- Volúmenes persistentes para datos, archivos subidos y logs.
+- Reinicio automático de los servicios.
+
+Para construir las imágenes y levantar los servicios:
 
 ```bash
-docker run -d \
-  --name shipnow-api \
-  -p 8080:8080 \
-  --env-file .env \
-  -e NODE_ENV=production \
-  -e LOG_LEVEL=info \
-  -v shipnow-uploads:/app/uploads \
-  -v shipnow-logs:/app/logs \
-  shipnow-api
+docker compose up --build -d
 ```
 
-El archivo `.env` proporciona las variables necesarias para la conexión con MongoDB y la configuración del servidor.
-
-Las variables `NODE_ENV` y `LOG_LEVEL` se establecen explícitamente para esta ejecución.
-
-Los volúmenes permiten conservar los archivos subidos y los registros de logging fuera del ciclo de vida del contenedor.
-
-### Verificar el contenedor
-
-Consultar los contenedores activos:
+Consultar el estado de los contenedores:
 
 ```bash
-docker ps
+docker compose ps
 ```
 
-Consultar los registros:
+Consultar los registros de la API:
 
 ```bash
-docker logs shipnow-api
+docker compose logs -f api
 ```
 
-Verificar el health check:
+Consultar los registros de MongoDB:
+
+```bash
+docker compose logs -f mongodb
+```
+
+Verificar el funcionamiento de la API:
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-La respuesta esperada debe indicar:
+La API queda disponible en:
 
-```json
-{
-  "status": "success",
-  "environment": "production",
-  "database": "connected",
-  "uptime": 20,
-  "timestamp": "..."
-}
+```text
+http://localhost:8080
 ```
 
-### Acceder a Swagger desde Docker
-
-Con el contenedor en ejecución, la documentación está disponible en:
+Swagger UI queda disponible en:
 
 ```text
 http://localhost:8080/api/docs
 ```
 
-### Detener el contenedor
+La especificación OpenAPI JSON queda disponible en:
 
-```bash
-docker stop shipnow-api
+```text
+http://localhost:8080/api/docs.json
 ```
 
-Para eliminar el contenedor después de detenerlo:
+### Detener los servicios
 
 ```bash
-docker rm shipnow-api
+docker compose down
 ```
 
-Los volúmenes `shipnow-uploads` y `shipnow-logs` se mantienen independientes del contenedor.
+Este comando detiene y elimina los contenedores, pero conserva los volúmenes persistentes.
+
+**Importante:** no utilizar `docker compose down -v` si se desea conservar los datos de MongoDB, archivos subidos y logs.
+
+### Volúmenes persistentes
+
+Docker Compose utiliza volúmenes independientes para:
+
+- `mongodb_data`: datos de MongoDB.
+- `shipnow_uploads`: archivos subidos.
+- `shipnow_logs`: archivos de logging.
+
+Esto permite conservar la información aunque se reemplacen los contenedores.
 
 ### Archivos excluidos de Docker y Git
 
@@ -1197,7 +1287,7 @@ Se excluyen archivos y directorios que no deben formar parte de la imagen o del 
 - `coverage/`
 - Archivos de log y temporales.
 
-Las variables sensibles se proporcionan durante la ejecución del contenedor y no se incorporan a la imagen.
+Las variables sensibles se proporcionan durante la ejecución y no se incorporan a la imagen.
 
 ---
 
@@ -1239,10 +1329,10 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Manejo de errores de validación de Mongoose.
 - Manejo de identificadores inválidos y registros duplicados.
 - Manejo controlado de errores de MongoDB.
-- Integración del manejo centralizado de errores en el módulo de mocks.
+- Integración del manejo centralizado de errores en los módulos.
 - Validación de cantidades recibidas en los endpoints de mocking.
 - Derivación de rutas inexistentes al middleware global.
-- Pruebas de casos exitosos y errores mediante Thunder Client.
+- Pruebas de casos exitosos y errores.
 
 ### Módulo 4
 
@@ -1254,7 +1344,7 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Registro de solicitudes HTTP y duración de las respuestas.
 - Registro de eventos importantes de pedidos, mocks y conexión a MongoDB.
 - Persistencia de logs en archivos.
-- Rotación diaria y retención de 14 días.
+- Rotación automática por tamaño (5 MB), con hasta cinco archivos por transporte.
 - Separación de registros generales y errores críticos.
 - Exclusión de archivos de logs mediante `.gitignore`.
 - Incorporación de un endpoint de prueba para verificar los niveles de logging.
@@ -1264,12 +1354,12 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Incorporación de Swagger para documentar la API mediante OpenAPI 3.0.
 - Configuración independiente de Swagger en `src/docs/swagger.config.js`.
 - Integración de Swagger UI en la ruta `/api/docs`.
-- Documentación de los endpoints de Users, Products, Stores, Orders, Mocks y Logger.
+- Exposición de la especificación OpenAPI JSON en `/api/docs.json`.
+- Documentación de los endpoints de Users, Products, Stores, Orders, Deliveries, Mocks, Logger y Health.
 - Documentación de métodos HTTP, parámetros, cuerpos de solicitud y respuestas.
 - Definición de esquemas reutilizables para usuarios, pedidos, entregas, comercios y respuestas.
 - Documentación de los endpoints de generación de datos ficticios y carga mediante seed.
-- Documentación del endpoint de prueba del sistema de logging.
-- Verificación de Swagger UI y pruebas de endpoints documentados mediante Thunder Client.
+- Verificación de Swagger UI y pruebas de endpoints documentados.
 
 ### Módulo 6
 
@@ -1277,16 +1367,19 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Configuración de un entorno de testing independiente.
 - Separación de la base de datos de pruebas respecto de desarrollo.
 - Configuración de la conexión y limpieza de datos de prueba.
-- Pruebas de aplicación, usuarios, pedidos, mocks, logger y documentación.
+- Pruebas de aplicación, usuarios, comercios, productos, pedidos, entregas, mocks, logger y documentación.
 - Verificación de respuestas HTTP, validaciones y errores.
+- Suite de pruebas con **94 casos aprobados** en la última ejecución confirmada.
 
 ### Módulo 7
 
 - Incorporación de Multer para la recepción de archivos.
 - Configuración de límites de tamaño.
 - Validación de tipos MIME permitidos.
+- Validación de la firma del contenido de los archivos.
 - Organización del almacenamiento de documentos y comprobantes.
-- Integración de la carga de archivos con los recursos correspondientes.
+- Integración de la carga de archivos con usuarios, pedidos y entregas.
+- Almacenamiento de metadatos en MongoDB.
 - Exclusión de archivos subidos mediante `.gitignore`.
 - Pruebas de funcionalidades relacionadas con la carga de archivos.
 
@@ -1295,14 +1388,17 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - Configuración de variables de entorno para desarrollo, testing y producción.
 - Validación de variables críticas al iniciar la aplicación.
 - Incorporación de `LOG_LEVEL` configurable.
+- Configuración opcional de `MONGODB_DNS_SERVER` y `CORS_ORIGINS`.
 - Mejora del endpoint `/health`, incluyendo estado de la base de datos, entorno, uptime y timestamp.
+- Incorporación de la ruta alternativa `/api/health`.
 - Implementación del cierre ordenado del servidor mediante `SIGINT` y `SIGTERM`.
 - Incorporación de `Dockerfile`.
 - Incorporación de `.dockerignore`.
 - Construcción de la imagen `shipnow-api`.
-- Ejecución de la API en un contenedor Docker.
-- Configuración de variables de entorno externas al contenedor.
-- Persistencia de logs y archivos subidos mediante volúmenes Docker.
+- Configuración de Docker Compose con API y MongoDB.
+- Health check de MongoDB y dependencia de disponibilidad entre servicios.
+- Persistencia de datos, archivos y logs mediante volúmenes Docker.
+- Ejecución de la API con usuario sin privilegios de root.
 - Verificación del funcionamiento en entorno `production`.
 - Comprobación de conexión con MongoDB desde el contenedor.
 - Verificación del health check mediante HTTP 200.
@@ -1316,4 +1412,6 @@ Esta versión incluye los requerimientos correspondientes a las **Pre-entregas d
 - No incorporar archivos de `uploads/` ni `logs/` al control de versiones.
 - Configurar las variables de entorno necesarias antes de iniciar la aplicación.
 - Utilizar los volúmenes Docker para conservar los archivos y registros generados durante la ejecución.
-- Revisar los permisos y la exposición de endpoints de prueba antes de realizar un despliegue público.
+- Mantener los endpoints de prueba fuera del entorno de producción.
+- Configurar los orígenes permitidos mediante `CORS_ORIGINS` en producción.
+- Revisar los permisos y la exposición de endpoints antes de realizar un despliegue público.

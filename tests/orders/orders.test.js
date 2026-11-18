@@ -92,14 +92,24 @@ describe("Pedidos", function () {
   });
 
   describe("POST /api/orders", function () {
-    it("debe crear un pedido correctamente", async function () {
+    it("debe crear un pedido correctamente y devolver sus relaciones pobladas", async function () {
       const response = await request(app).post("/api/orders").send(orderData());
 
       expect(response.status).to.equal(201);
       expect(response.body.status).to.equal("success");
-      expect(response.body.payload).to.have.property("_id");
-      expect(response.body.payload.total).to.equal(3000);
-      expect(response.body.payload.status).to.equal("created");
+
+      const payload = response.body.payload;
+
+      expect(payload).to.have.property("_id");
+      expect(payload.total).to.equal(3000);
+      expect(payload.status).to.equal("created");
+      expect(payload.priority).to.equal("normal");
+
+      expect(payload.customer).to.be.an("object");
+      expect(payload.customer.email).to.equal(testUser.email);
+
+      expect(payload.store).to.be.an("object");
+      expect(payload.store.name).to.equal(testStore.name);
     });
 
     it("debe devolver 400 si faltan datos obligatorios", async function () {
@@ -109,10 +119,125 @@ describe("Pedidos", function () {
       expect(response.body.status).to.equal("error");
       expect(response.body.error).to.equal("ORDER_REQUIRED_FIELDS");
     });
+
+    it("debe devolver 400 si el pedido no contiene productos", async function () {
+      const response = await request(app)
+        .post("/api/orders")
+        .send({
+          ...orderData(),
+          items: [],
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("ORDER_ITEMS_REQUIRED");
+    });
+
+    it("debe rechazar una cantidad que no sea un entero", async function () {
+      const response = await request(app)
+        .post("/api/orders")
+        .send({
+          ...orderData(),
+          items: [
+            {
+              name: "Producto de prueba",
+              quantity: 1.5,
+              price: 1500,
+            },
+          ],
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_ORDER_ITEMS");
+    });
+
+    it("debe rechazar una cantidad menor a 1", async function () {
+      const response = await request(app)
+        .post("/api/orders")
+        .send({
+          ...orderData(),
+          items: [
+            {
+              name: "Producto de prueba",
+              quantity: 0,
+              price: 1500,
+            },
+          ],
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_ORDER_ITEMS");
+    });
+
+    it("debe rechazar un precio negativo", async function () {
+      const response = await request(app)
+        .post("/api/orders")
+        .send({
+          ...orderData(),
+          items: [
+            {
+              name: "Producto de prueba",
+              quantity: 1,
+              price: -100,
+            },
+          ],
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_ORDER_ITEMS");
+    });
+
+    it("debe rechazar un nombre de producto vacío", async function () {
+      const response = await request(app)
+        .post("/api/orders")
+        .send({
+          ...orderData(),
+          items: [
+            {
+              name: "   ",
+              quantity: 1,
+              price: 1500,
+            },
+          ],
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_ORDER_ITEMS");
+    });
+
+    it("debe rechazar una prioridad inválida", async function () {
+      const response = await request(app)
+        .post("/api/orders")
+        .send({
+          ...orderData(),
+          priority: "urgent",
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_ORDER_PRIORITY");
+    });
+
+    it("debe rechazar una dirección de entrega vacía", async function () {
+      const response = await request(app)
+        .post("/api/orders")
+        .send({
+          ...orderData(),
+          deliveryAddress: "   ",
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("ORDER_REQUIRED_FIELDS");
+    });
   });
 
   describe("GET /api/orders/:oid", function () {
-    it("debe devolver un pedido existente", async function () {
+    it("debe devolver un pedido existente con cliente y comercio poblados", async function () {
       const order = await OrderModel.create({
         ...orderData(),
         total: 3000,
@@ -139,7 +264,7 @@ describe("Pedidos", function () {
   });
 
   describe("PUT /api/orders/:oid/status", function () {
-    it("debe actualizar el estado de un pedido", async function () {
+    it("debe actualizar el estado de un pedido y devolver sus relaciones pobladas", async function () {
       const order = await OrderModel.create({
         ...orderData(),
         total: 3000,
@@ -152,6 +277,8 @@ describe("Pedidos", function () {
       expect(response.status).to.equal(200);
       expect(response.body.status).to.equal("success");
       expect(response.body.payload.status).to.equal("delivered");
+      expect(response.body.payload.customer).to.have.property("email");
+      expect(response.body.payload.store).to.have.property("name");
     });
 
     it("debe devolver 400 si el estado no es válido", async function () {
@@ -230,6 +357,24 @@ describe("Pedidos", function () {
       expect(response.status).to.equal(400);
       expect(response.body.status).to.equal("error");
       expect(response.body.error).to.equal("INVALID_FILE_TYPE");
+    });
+
+    it("debe rechazar un comprobante cuyo contenido no coincide con su MIME", async function () {
+      const order = await OrderModel.create({
+        ...orderData(),
+        total: 3000,
+      });
+
+      const response = await request(app)
+        .post(`/api/orders/${order._id}/proof`)
+        .attach("proof", Buffer.from("Esto no es un PDF"), {
+          filename: "comprobante-falso.pdf",
+          contentType: "application/pdf",
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_FILE_CONTENT");
     });
 
     it("debe devolver 400 si el archivo supera los 5 MB", async function () {

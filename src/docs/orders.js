@@ -10,12 +10,43 @@
  * /api/orders:
  *   get:
  *     summary: Obtener todos los pedidos
+ *     description: Devuelve pedidos paginados.
  *     tags: [Orders]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Número de página.
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Cantidad de pedidos por página. Máximo 100.
  *     responses:
  *       200:
- *         description: Pedidos obtenidos correctamente
+ *         description: Pedidos obtenidos correctamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedOrdersResponse'
+ *       400:
+ *         description: Parámetros de paginación inválidos.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       500:
- *         description: Error interno del servidor
+ *         description: Error interno del servidor.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *
  *   post:
  *     summary: Crear un pedido
@@ -25,40 +56,37 @@
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - customer
- *               - store
- *               - items
- *               - deliveryAddress
- *             properties:
- *               customer:
- *                 type: string
- *                 example: "672a1b2c3d4e5f6789012345"
- *               store:
- *                 type: string
- *                 example: "672a1b2c3d4e5f6789012346"
- *               items:
- *                 type: array
- *                 minItems: 1
- *                 items:
- *                   $ref: '#/components/schemas/OrderItem'
- *               deliveryAddress:
- *                 type: string
- *                 example: "Av. Ramírez 123, Paraná"
- *               priority:
- *                 type: string
- *                 enum: [low, normal, high]
- *                 default: normal
+ *             $ref: '#/components/schemas/OrderInput'
  *     responses:
  *       201:
- *         description: Pedido creado correctamente
+ *         description: Pedido creado correctamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     payload:
+ *                       $ref: '#/components/schemas/Order'
  *       400:
- *         description: Faltan campos obligatorios o los items son inválidos
+ *         description: Faltan campos obligatorios o los items son inválidos.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       404:
- *         description: Usuario o comercio no encontrado
+ *         description: Usuario o comercio no encontrado.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       500:
- *         description: Error interno del servidor
+ *         description: Error interno del servidor.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 
 /**
@@ -73,16 +101,37 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID del pedido
+ *         description: ID del pedido.
  *     responses:
  *       200:
- *         description: Pedido obtenido correctamente
+ *         description: Pedido obtenido correctamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     payload:
+ *                       $ref: '#/components/schemas/Order'
  *       400:
- *         description: ID inválido
+ *         description: ID inválido.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       404:
- *         description: Pedido no encontrado
+ *         description: Pedido no encontrado.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       500:
- *         description: Error interno del servidor
+ *         description: Error interno del servidor.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *
  *   delete:
  *     summary: Eliminar un pedido
@@ -93,16 +142,37 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID del pedido
+ *         description: ID del pedido.
  *     responses:
  *       200:
- *         description: Pedido eliminado correctamente
+ *         description: Pedido eliminado correctamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     payload:
+ *                       $ref: '#/components/schemas/Order'
  *       400:
- *         description: ID inválido
+ *         description: ID inválido.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       404:
- *         description: Pedido no encontrado
+ *         description: Pedido no encontrado.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       500:
- *         description: Error interno del servidor
+ *         description: Error interno del servidor.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 
 /**
@@ -117,29 +187,43 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID del pedido
+ *         description: ID del pedido.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - status
- *             properties:
- *               status:
- *                 type: string
- *                 enum: [created, assigned, picked_up, in_transit, delivered, cancelled]
- *                 example: in_transit
+ *             $ref: '#/components/schemas/OrderStatusUpdate'
  *     responses:
  *       200:
- *         description: Estado del pedido actualizado correctamente
+ *         description: Estado del pedido actualizado correctamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     payload:
+ *                       $ref: '#/components/schemas/Order'
  *       400:
- *         description: ID o estado inválido
+ *         description: ID o estado inválido.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       404:
- *         description: Pedido no encontrado
+ *         description: Pedido no encontrado.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       500:
- *         description: Error interno del servidor
+ *         description: Error interno del servidor.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 
 /**
@@ -154,7 +238,7 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID del pedido
+ *         description: ID del pedido.
  *     requestBody:
  *       required: true
  *       content:
@@ -167,14 +251,38 @@
  *               proof:
  *                 type: string
  *                 format: binary
- *                 description: Archivo PDF, JPEG, PNG o WebP de hasta 5 MB
+ *                 description: Archivo PDF, JPEG, PNG o WebP de hasta 5 MB.
  *     responses:
  *       200:
- *         description: Comprobante cargado correctamente
+ *         description: Comprobante cargado correctamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Comprobante cargado correctamente"
+ *                     payload:
+ *                       $ref: '#/components/schemas/Order'
  *       400:
- *         description: Archivo faltante, tipo de archivo inválido o tamaño excedido
+ *         description: Archivo faltante, tipo de archivo inválido o tamaño excedido.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       404:
- *         description: Pedido no encontrado
+ *         description: Pedido no encontrado.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       500:
- *         description: Error interno del servidor
+ *         description: Error interno del servidor.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */

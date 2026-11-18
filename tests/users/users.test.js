@@ -86,6 +86,82 @@ describe("Usuarios", function () {
     });
   });
 
+  describe("POST /api/users", function () {
+    it("debe crear un usuario con rol USER y contraseña hasheada", async function () {
+      const email = `create-${new mongoose.Types.ObjectId()}@example.com`;
+
+      const response = await request(app).post("/api/users").send({
+        firstName: "Nuevo",
+        lastName: "Usuario",
+        email,
+        password: "password123",
+      });
+
+      expect(response.status).to.equal(201);
+      expect(response.body.status).to.equal("success");
+      expect(response.body.payload.role).to.equal("USER");
+      expect(response.body.payload).to.not.have.property("password");
+
+      const savedUser = await UserModel.findOne({ email }).select("+password");
+
+      expect(savedUser).to.exist;
+      expect(savedUser.password).to.be.a("string").and.not.empty;
+      expect(savedUser.password).to.not.equal("password123");
+
+      await UserModel.deleteOne({ _id: savedUser._id });
+    });
+
+    it("debe rechazar la asignación de un rol desde el cliente", async function () {
+      const response = await request(app)
+        .post("/api/users")
+        .send({
+          firstName: "Usuario",
+          lastName: "Malicioso",
+          email: `role-${new mongoose.Types.ObjectId()}@example.com`,
+          password: "password123",
+          role: "ADMIN",
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+
+    it("debe rechazar documentos enviados durante la creación", async function () {
+      const response = await request(app)
+        .post("/api/users")
+        .send({
+          firstName: "Usuario",
+          lastName: "Documentos",
+          email: `documents-${new mongoose.Types.ObjectId()}@example.com`,
+          password: "password123",
+          documents: [],
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+  });
+
+  describe("PUT /api/users/:uid", function () {
+    it("debe rechazar cambios de rol", async function () {
+      const response = await request(app)
+        .put(`/api/users/${testUser._id}`)
+        .send({ role: "ADMIN" });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+
+    it("debe rechazar cambios de contraseña", async function () {
+      const response = await request(app)
+        .put(`/api/users/${testUser._id}`)
+        .send({ password: "nuevaPassword123" });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.error).to.equal("VALIDATION_ERROR");
+    });
+  });
+
   describe("POST /api/users/:uid/documents", function () {
     it("debe cargar correctamente un documento del usuario", async function () {
       const response = await request(app)
@@ -134,6 +210,20 @@ describe("Usuarios", function () {
       expect(response.status).to.equal(400);
       expect(response.body.status).to.equal("error");
       expect(response.body.error).to.equal("INVALID_FILE_TYPE");
+    });
+
+    it("debe rechazar un archivo cuyo contenido no coincide con su MIME", async function () {
+      const response = await request(app)
+        .post(`/api/users/${testUser._id}/documents`)
+        .field("type", "driver_license")
+        .attach("document", Buffer.from("Esto no es un PDF"), {
+          filename: "documento-falso.pdf",
+          contentType: "application/pdf",
+        });
+
+      expect(response.status).to.equal(400);
+      expect(response.body.status).to.equal("error");
+      expect(response.body.error).to.equal("INVALID_FILE_CONTENT");
     });
 
     it("debe devolver 400 si el archivo supera los 5 MB", async function () {

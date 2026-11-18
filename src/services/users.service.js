@@ -2,11 +2,17 @@ import { unlink } from "node:fs/promises";
 import { usersRepository } from "../repositories/users.repository.js";
 import { AppError } from "../utils/app-error.js";
 import { ERRORS } from "../constants/errors.js";
-import { DOCUMENT_TYPES } from "../constants/index.js";
+import { DOCUMENT_TYPES, USER_ROLES } from "../constants/index.js";
+import { hashPassword } from "../utils/password.js";
+import { validateAllowedFields } from "../utils/validate-allowed-fields.js";
 import logger from "../config/logger.js";
 import { getPaginationParams, buildPagination } from "../utils/pagination.js";
 
 const notFound = () => new AppError(ERRORS.USER_NOT_FOUND);
+
+const CREATE_FIELDS = ["firstName", "lastName", "email", "password"];
+
+const UPDATE_FIELDS = ["firstName", "lastName", "email"];
 
 export const usersService = {
   getAll: async (query = {}) => {
@@ -34,23 +40,43 @@ export const usersService = {
   },
 
   create: async (userData) => {
+    validateAllowedFields(userData, CREATE_FIELDS);
+
     if (userData.email) {
       const existingUser = await usersRepository.findByEmail(userData.email);
-      if (existingUser) throw new AppError(ERRORS.USER_ALREADY_EXISTS);
+
+      if (existingUser) {
+        throw new AppError(ERRORS.USER_ALREADY_EXISTS);
+      }
     }
-    return usersRepository.create(userData);
+
+    const data = {
+      ...userData,
+      role: USER_ROLES.USER,
+    };
+
+    if (typeof data.password === "string") {
+      data.password = await hashPassword(data.password);
+    }
+
+    return usersRepository.create(data);
   },
 
   update: async (id, userData) => {
+    validateAllowedFields(userData, UPDATE_FIELDS);
+
     if (userData.email) {
       const existingUser = await usersRepository.findByEmail(userData.email);
+
       if (existingUser && String(existingUser._id) !== String(id)) {
         throw new AppError(ERRORS.USER_ALREADY_EXISTS);
       }
     }
 
     const user = await usersRepository.updateById(id, userData);
+
     if (!user) throw notFound();
+
     return user;
   },
 
@@ -60,7 +86,6 @@ export const usersService = {
     return user;
   },
 
-  // Agregar un documento al usuario y guardar sus metadatos.
   addDocument: async (id, file, type) => {
     if (!file) {
       throw new AppError(ERRORS.FILE_REQUIRED);

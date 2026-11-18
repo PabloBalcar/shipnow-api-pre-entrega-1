@@ -33,7 +33,15 @@ if (!validEnvironments.includes(process.env.NODE_ENV)) {
   );
 }
 
-// Los niveles válidos deben coincidir con los niveles personalizados de Winston.
+const mongoUri = process.env.MONGODB_URI.trim();
+
+if (
+  !mongoUri.startsWith("mongodb://") &&
+  !mongoUri.startsWith("mongodb+srv://")
+) {
+  throw new Error("MONGODB_URI debe comenzar con mongodb:// o mongodb+srv://.");
+}
+
 const validLogLevels = ["fatal", "error", "warning", "info", "http", "debug"];
 
 const defaultLogLevel =
@@ -47,9 +55,17 @@ if (!validLogLevels.includes(logLevel)) {
   );
 }
 
+// Orígenes CORS permitidos, separados por coma.
+const corsOrigins = (process.env.CORS_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 export const config = Object.freeze({
   port,
-  mongoUri: process.env.MONGODB_URI,
+  mongoUri,
   nodeEnv: process.env.NODE_ENV,
   logLevel,
+  mongoDnsServer: process.env.MONGODB_DNS_SERVER?.trim() || null,
+  corsOrigins,
 });
